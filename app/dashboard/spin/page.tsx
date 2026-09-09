@@ -61,19 +61,11 @@ export default function SpinPage() {
 
   const [loading, setLoading] = useState(true);
   const [spinning, setSpinning] = useState(false);
-
   const [rotation, setRotation] = useState(0);
-
   const [spinsUsed, setSpinsUsed] = useState(0);
-
-  const [result, setResult] =
-    useState<SpinResult | null>(null);
-
+  const [result, setResult] = useState<SpinResult | null>(null);
   const [error, setError] = useState("");
-
-  const [wallet, setWallet] = useState<number | null>(
-    null
-  );
+  const [wallet, setWallet] = useState<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -96,10 +88,7 @@ export default function SpinPage() {
           .eq("id", user.id)
           .maybeSingle();
 
-      if (
-        profileError &&
-        profileError.code !== "PGRST116"
-      ) {
+      if (profileError && profileError.code !== "PGRST116") {
         console.error(profileError);
       }
 
@@ -126,26 +115,13 @@ export default function SpinPage() {
     if (spinning) return;
 
     if (spinsUsed >= 5) {
-      setError(
-        "You have reached today's spin limit."
-      );
+      setError("You have reached today's spin limit.");
       return;
     }
 
     setError("");
     setResult(null);
     setSpinning(true);
-
-    /*
-     * IMPORTANT:
-     *
-     * This random number is ONLY for the visual wheel.
-     *
-     * It does NOT determine the reward.
-     *
-     * Actual reward is generated inside the protected
-     * Supabase RPC.
-     */
 
     const visualRotation =
       rotation +
@@ -155,17 +131,9 @@ export default function SpinPage() {
     setRotation(visualRotation);
 
     try {
-      /*
-       * Wait for the wheel animation.
-       */
-
       await new Promise((resolve) =>
         setTimeout(resolve, 4200)
       );
-
-      /*
-       * Secure server-side spin.
-       */
 
       const { data, error: rpcError } =
         await supabase.rpc("spin_and_win");
@@ -175,23 +143,14 @@ export default function SpinPage() {
       }
 
       if (!data?.success) {
-        throw new Error(
-          "Spin could not be completed."
-        );
+        throw new Error("Spin could not be completed.");
       }
 
-      const spinResult =
-        data as SpinResult;
+      const spinResult = data as SpinResult;
 
       setResult(spinResult);
 
-      setSpinsUsed(
-        Number(spinResult.spins_used)
-      );
-
-      /*
-       * Refresh wallet display from database.
-       */
+      setSpinsUsed(Number(spinResult.spins_used));
 
       const {
         data: { user },
@@ -210,10 +169,7 @@ export default function SpinPage() {
         }
       }
     } catch (err: any) {
-      console.error(
-        "Spin error:",
-        err
-      );
+      console.error("Spin error:", err);
 
       let message =
         "Unable to complete spin. Please try again.";
@@ -284,28 +240,19 @@ export default function SpinPage() {
 
       <div className="mx-auto max-w-6xl">
 
-        {/* ================================================= */}
         {/* HEADER */}
-        {/* ================================================= */}
 
         <div className="mb-8 flex items-center justify-between gap-4">
 
           <button
-            onClick={() =>
-              router.push("/dashboard")
-            }
-            className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-slate-700 hover:bg-slate-800"
+            onClick={() => router.push("/dashboard")}
+            className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-blue-500/30 hover:bg-slate-800 hover:text-white"
           >
-            <span className="text-lg">
-              ←
-            </span>
-
+            <span className="text-lg">←</span>
             Dashboard
           </button>
 
           <div className="flex items-center gap-3">
-
-            {/* WALLET */}
 
             {wallet !== null && (
               <div className="hidden rounded-xl border border-slate-800 bg-slate-900 px-4 py-2 text-right sm:block">
@@ -318,8 +265,6 @@ export default function SpinPage() {
                 </p>
               </div>
             )}
-
-            {/* SPINS */}
 
             <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-2 text-right">
               <p className="text-[10px] uppercase tracking-wider text-slate-500">
@@ -335,9 +280,7 @@ export default function SpinPage() {
         </div>
 
 
-        {/* ================================================= */}
         {/* TITLE */}
-        {/* ================================================= */}
 
         <div className="mb-10 text-center">
 
@@ -357,91 +300,216 @@ export default function SpinPage() {
         </div>
 
 
-        {/* ================================================= */}
         {/* MAIN GRID */}
-        {/* ================================================= */}
 
         <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
 
-
-          {/* ================================================= */}
           {/* WHEEL */}
-          {/* ================================================= */}
 
           <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-2xl sm:p-8">
 
             <div className="flex flex-col items-center">
 
-              <div className="relative">
+              {/* WHEEL CONTAINER */}
+
+              <div className="relative flex items-center justify-center">
 
                 {/* POINTER */}
 
-                <div className="absolute left-1/2 top-[-15px] z-30 -translate-x-1/2">
-                  <div
-                    className="h-0 w-0"
-                    style={{
-                      borderLeft:
-                        "16px solid transparent",
-                      borderRight:
-                        "16px solid transparent",
-                      borderTop:
-                        "32px solid white",
-                    }}
-                  />
+                <div className="absolute left-1/2 top-[-8px] z-40 -translate-x-1/2">
+
+                  <div className="relative">
+
+                    <div
+                      className="
+                        h-0
+                        w-0
+                        border-l-[14px]
+                        border-r-[14px]
+                        border-t-[30px]
+                        border-l-transparent
+                        border-r-transparent
+                        border-t-white
+                        drop-shadow-[0_3px_8px_rgba(0,0,0,0.8)]
+                      "
+                    />
+
+                    <div className="absolute left-1/2 top-[-3px] h-2 w-2 -translate-x-1/2 rounded-full bg-blue-400" />
+
+                  </div>
+
                 </div>
 
 
-                {/* WHEEL */}
+                {/* OUTER RING */}
 
                 <div
-                  className="relative h-[290px] w-[290px] rounded-full border-[10px] border-slate-800 shadow-[0_0_80px_rgba(37,99,235,0.20)] sm:h-[370px] sm:w-[370px]"
-                  style={{
-                    transform:
-                      `rotate(${rotation}deg)`,
-
-                    transition: spinning
-                      ? "transform 4200ms cubic-bezier(0.12,0.8,0.18,1)"
-                      : "none",
-
-                    background:
-                      "conic-gradient(#2563eb 0deg 45deg,#0f172a 45deg 90deg,#2563eb 90deg 135deg,#0f172a 135deg,#2563eb 180deg 225deg,#0f172a 225deg 270deg,#2563eb 270deg 315deg,#0f172a 315deg 360deg)",
-                  }}
+                  className="
+                    relative
+                    h-[310px]
+                    w-[310px]
+                    rounded-full
+                    border-[8px]
+                    border-slate-700
+                    bg-slate-950
+                    p-[5px]
+                    shadow-[0_0_70px_rgba(37,99,235,0.22)]
+                    sm:h-[400px]
+                    sm:w-[400px]
+                  "
                 >
 
-                  {/* WHEEL LABELS */}
+                  {/* ROTATING WHEEL */}
 
-                  {wheelRewards.map(
-                    (reward, index) => {
+                  <div
+                    className="
+                      relative
+                      h-full
+                      w-full
+                      overflow-hidden
+                      rounded-full
+                    "
+                    style={{
+                      transform: `rotate(${rotation}deg)`,
 
-                      const angle =
-                        index * 45 + 22.5;
+                      transition: spinning
+                        ? "transform 4200ms cubic-bezier(0.12,0.8,0.18,1)"
+                        : "none",
 
-                      return (
-                        <div
-                          key={index}
-                          className="absolute left-1/2 top-1/2 w-20 -translate-x-1/2 -translate-y-1/2 text-center text-xs font-black text-white sm:w-24 sm:text-sm"
-                          style={{
-                            transform: `
-                              translate(-50%, -50%)
-                              rotate(${angle}deg)
-                              translateY(-105px)
-                              rotate(-${angle}deg)
-                            `,
-                          }}
-                        >
-                          {reward}
-                        </div>
-                      );
-                    }
-                  )}
+                      background: `
+                        conic-gradient(
+                          from -22.5deg,
+                          #2563eb 0deg 45deg,
+                          #0f172a 45deg 90deg,
+                          #2563eb 90deg 135deg,
+                          #0f172a 135deg 180deg,
+                          #2563eb 180deg 225deg,
+                          #0f172a 225deg 270deg,
+                          #2563eb 270deg 315deg,
+                          #0f172a 315deg 360deg
+                        )
+                      `,
+                    }}
+                  >
+
+                    {/* SLICE DIVIDERS */}
+
+                    {Array.from({ length: 8 }).map(
+                      (_, index) => {
+                        const angle = index * 45;
+
+                        return (
+                          <div
+                            key={index}
+                            className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-1/2 w-[2px] origin-bottom bg-white/15"
+                            style={{
+                              transform: `translateX(-50%) rotate(${angle}deg)`,
+                            }}
+                          />
+                        );
+                      }
+                    )}
 
 
-                  {/* CENTER */}
+                    {/* REWARD LABELS */}
 
-                  <div className="absolute left-1/2 top-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-slate-700 bg-slate-950 shadow-2xl sm:h-24 sm:w-24">
+                    {wheelRewards.map(
+                      (reward, index) => {
 
-                    <div className="m-auto text-3xl sm:text-4xl">
-                      🎁
+                        const angle =
+                          index * 45 + 22.5;
+
+                        return (
+                          <div
+                            key={`${reward}-${index}`}
+                            className="
+                              pointer-events-none
+                              absolute
+                              left-1/2
+                              top-1/2
+                              z-20
+                              flex
+                              h-12
+                              w-[72px]
+                              -translate-x-1/2
+                              -translate-y-1/2
+                              items-center
+                              justify-center
+                              rounded-xl
+                              border
+                              border-white/10
+                              bg-black/15
+                              text-center
+                              text-[13px]
+                              font-black
+                              tracking-tight
+                              text-white
+                              drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]
+                              sm:h-14
+                              sm:w-[88px]
+                              sm:text-[15px]
+                            "
+                            style={{
+                              transform: `
+                                translate(-50%, -50%)
+                                rotate(${angle}deg)
+                                translateY(-108px)
+                                rotate(-${angle}deg)
+                              `,
+                            }}
+                          >
+                            {reward}
+                          </div>
+                        );
+                      }
+                    )}
+
+
+                    {/* INNER CIRCLE */}
+
+                    <div
+                      className="
+                        absolute
+                        left-1/2
+                        top-1/2
+                        z-30
+                        flex
+                        h-[82px]
+                        w-[82px]
+                        -translate-x-1/2
+                        -translate-y-1/2
+                        items-center
+                        justify-center
+                        rounded-full
+                        border-[6px]
+                        border-slate-700
+                        bg-slate-950
+                        shadow-[0_0_30px_rgba(0,0,0,0.8)]
+                        sm:h-[100px]
+                        sm:w-[100px]
+                      "
+                    >
+
+                      <div
+                        className="
+                          flex
+                          h-[62px]
+                          w-[62px]
+                          items-center
+                          justify-center
+                          rounded-full
+                          border
+                          border-blue-500/20
+                          bg-blue-500/10
+                          text-3xl
+                          sm:h-[76px]
+                          sm:w-[76px]
+                          sm:text-4xl
+                        "
+                      >
+                        🎁
+                      </div>
+
                     </div>
 
                   </div>
@@ -451,9 +519,7 @@ export default function SpinPage() {
               </div>
 
 
-              {/* ================================================= */}
               {/* SPIN BUTTON */}
-              {/* ================================================= */}
 
               <button
                 onClick={handleSpin}
@@ -461,7 +527,26 @@ export default function SpinPage() {
                   spinning ||
                   spinsRemaining <= 0
                 }
-                className="mt-10 w-full max-w-md rounded-2xl bg-blue-600 px-6 py-4 text-base font-black shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50 sm:text-lg"
+                className="
+                  mt-10
+                  w-full
+                  max-w-md
+                  rounded-2xl
+                  border
+                  border-blue-400/20
+                  bg-blue-600
+                  px-6
+                  py-4
+                  text-base
+                  font-black
+                  shadow-[0_10px_30px_rgba(37,99,235,0.25)]
+                  transition
+                  hover:bg-blue-500
+                  hover:shadow-[0_12px_35px_rgba(37,99,235,0.35)]
+                  disabled:cursor-not-allowed
+                  disabled:opacity-50
+                  sm:text-lg
+                "
               >
 
                 {spinning ? (
@@ -482,15 +567,12 @@ export default function SpinPage() {
 
               </button>
 
-
               <p className="mt-3 text-center text-xs text-slate-500">
-
                 {spinning
                   ? "Please wait for the result..."
                   : freeSpinAvailable
                   ? "Your first spin today is free."
                   : "This extra spin will cost $0.30."}
-
               </p>
 
 
@@ -553,12 +635,9 @@ export default function SpinPage() {
           </section>
 
 
-          {/* ================================================= */}
           {/* SIDE PANEL */}
-          {/* ================================================= */}
 
           <div className="space-y-5">
-
 
             {/* DAILY FREE SPIN */}
 
@@ -583,7 +662,6 @@ export default function SpinPage() {
                 </div>
 
               </div>
-
 
               <div className="mt-5 flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/50 p-4">
 
@@ -622,7 +700,6 @@ export default function SpinPage() {
                 balance.
               </p>
 
-
               <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
 
                 <div className="flex items-center justify-between">
@@ -645,7 +722,6 @@ export default function SpinPage() {
 
               </div>
 
-
               <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
 
                 <div className="flex items-center justify-between">
@@ -661,6 +737,7 @@ export default function SpinPage() {
                   </div>
 
                   <div className="text-right">
+
                     <p className="text-xs text-slate-500">
                       Used
                     </p>
@@ -668,6 +745,7 @@ export default function SpinPage() {
                     <p className="mt-1 font-bold text-blue-400">
                       {spinsUsed}/5
                     </p>
+
                   </div>
 
                 </div>
@@ -689,7 +767,6 @@ export default function SpinPage() {
                 Rewards are selected randomly by the
                 secure server.
               </p>
-
 
               <div className="mt-5 grid grid-cols-2 gap-3">
 

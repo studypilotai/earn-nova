@@ -4,11 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import {
   ArrowLeft,
-  ArrowRight,
   CheckCircle2,
   Clock3,
   Loader2,
   PlayCircle,
+  ShieldCheck,
   Sparkles,
   Video,
 } from "lucide-react";
@@ -18,22 +18,17 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-type VideoTask = {
-  id: string;
-  title: string;
-  description: string | null;
-  reward: number;
-  video_url: string | null;
-  status: string;
-  created_at: string;
+type AvailableVideo = {
+  id: number;
 };
 
 export default function VideosPage() {
-  const [videos, setVideos] = useState<VideoTask[]>([]);
+  const [video, setVideo] = useState<AvailableVideo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const loadVideos = useCallback(async () => {
+  const loadAvailableVideo = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
 
@@ -43,63 +38,83 @@ export default function VideosPage() {
         error: userError,
       } = await supabase.auth.getUser();
 
-      if (userError) {
-        console.error("AUTH ERROR:", userError);
-        setErrorMessage("Unable to verify your account.");
-        return;
-      }
-
-      if (!user) {
+      if (userError || !user) {
         window.location.replace("/login");
         return;
       }
 
-      const { data, error } = await supabase
-        .from("videos")
-        .select(`
-          id,
-          title,
-          description,
-          reward,
-          video_url,
-          status,
-          created_at
-        `)
-        .eq("status", "active")
-        .order("created_at", {
-          ascending: false,
-        });
+      /*
+       * Get videos already completed by this user.
+       * The actual reward remains hidden.
+       */
+      const { data: completedVideos, error: completedError } =
+        await supabase
+          .from("video_completions")
+          .select("video_id")
+          .eq("user_id", user.id);
 
-      if (error) {
-        console.error("VIDEOS ERROR:", error);
-
-        setErrorMessage(
-          error.message || "Unable to load videos."
-        );
-
+      if (completedError) {
+        console.error("COMPLETED VIDEOS ERROR:", completedError);
+        setErrorMessage("Unable to check your completed videos.");
         return;
       }
 
-      const formattedVideos: VideoTask[] = (data ?? []).map(
-        (video) => ({
-          id: String(video.id),
-          title: video.title ?? "Untitled Video",
-          description: video.description ?? null,
-          reward: Number(video.reward ?? 0),
-          video_url: video.video_url ?? null,
-          status: video.status ?? "active",
-          created_at: video.created_at,
-        })
+      const completedIds = new Set(
+        (completedVideos ?? []).map((item) => Number(item.video_id))
       );
 
-      setVideos(formattedVideos);
+      /*
+       * Load active videos only.
+       *
+       * IMPORTANT:
+       * We intentionally do NOT select:
+       * title
+       * description
+       * reward
+       * video_url
+       *
+       * These remain hidden from the user-facing page.
+       */
+      const { data: activeVideos, error: videosError } = await supabase
+        .from("videos")
+        .select("id")
+        .eq("status", "active");
+
+      if (videosError) {
+        console.error("VIDEOS ERROR:", videosError);
+        setErrorMessage("Unable to load available videos.");
+        return;
+      }
+
+      const eligibleVideos = (activeVideos ?? []).filter(
+        (item) => !completedIds.has(Number(item.id))
+      );
+
+      if (eligibleVideos.length === 0) {
+        setVideo(null);
+        return;
+      }
+
+      /*
+       * Random selection.
+       * Later this can be replaced by a server-side algorithm.
+       */
+      const randomIndex = Math.floor(
+        Math.random() * eligibleVideos.length
+      );
+
+      const selectedVideo = eligibleVideos[randomIndex];
+
+      setVideo({
+        id: Number(selectedVideo.id),
+      });
     } catch (error) {
       console.error("VIDEOS PAGE ERROR:", error);
 
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Something went wrong while loading videos."
+          : "Something went wrong."
       );
     } finally {
       setLoading(false);
@@ -107,8 +122,64 @@ export default function VideosPage() {
   }, []);
 
   useEffect(() => {
-    void loadVideos();
-  }, [loadVideos]);
+    void loadAvailableVideo();
+  }, [loadAvailableVideo]);
+
+  const startVideo = async () => {
+    if (!video || starting) return;
+
+    setStarting(true);
+    setErrorMessage("");
+
+    try {
+      /*
+       * For security, the real video URL should ideally be returned
+       * from a protected server/API route after validating:
+       * - logged-in user
+       * - active membership
+       * - daily limit
+       * - video eligibility
+       *
+       * This frontend does NOT expose the reward.
+       */
+
+      const { data, error } = await supabase
+        .from("videos")
+        .select("video_url")
+        .eq("id", video.id)
+        .eq("status", "active")
+        .single();
+
+      if (error || !data?.video_url) {
+        setErrorMessage("This video is currently unavailable.");
+        return;
+      }
+
+      /*
+       * Store a temporary session marker.
+       * Final reward validation must happen server-side.
+       */
+      sessionStorage.setItem(
+        "earnNovaVideoSession",
+        JSON.stringify({
+          videoId: video.id,
+          startedAt: Date.now(),
+        })
+      );
+
+      window.location.href = data.video_url;
+    } catch (error) {
+      console.error("START VIDEO ERROR:", error);
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to start video."
+      );
+    } finally {
+      setStarting(false);
+    }
+  };
 
   return (
     <main className="min-h-screen bg-[#070b10] px-3 py-4 text-white sm:px-5 sm:py-7">
@@ -141,8 +212,8 @@ export default function VideosPage() {
           </div>
         </header>
 
-        {/* PAGE INTRO */}
-        <section className="mb-5 rounded-[20px] border border-blue-500/10 bg-blue-500/[0.04] p-5">
+        {/* INTRO */}
+        <section className="mb-4 rounded-[20px] border border-blue-500/10 bg-blue-500/[0.04] p-5">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-400">
               <PlayCircle size={25} />
@@ -158,10 +229,80 @@ export default function VideosPage() {
               </h2>
 
               <p className="mt-2 text-xs leading-5 text-slate-500">
-                Watch available videos and earn
-                rewards for completing them.
+                Complete the available video activity
+                according to your membership limits.
               </p>
             </div>
+          </div>
+        </section>
+
+        {/* CONDITIONS */}
+        <section className="mb-4 rounded-[20px] border border-slate-800 bg-[#11151b] p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
+              <ShieldCheck size={20} />
+            </div>
+
+            <div>
+              <h3 className="text-sm font-bold text-white">
+                Before You Start
+              </h3>
+
+              <p className="text-[10px] text-slate-600">
+                Please follow the conditions
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+
+            <div className="flex items-start gap-3 rounded-xl border border-slate-800 bg-[#0c1016] p-3">
+              <CheckCircle2
+                size={16}
+                className="mt-0.5 shrink-0 text-green-400"
+              />
+
+              <p className="text-[11px] leading-5 text-slate-400">
+                Complete the required watch session before
+                returning to EarnNova.
+              </p>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-xl border border-slate-800 bg-[#0c1016] p-3">
+              <Clock3
+                size={16}
+                className="mt-0.5 shrink-0 text-blue-400"
+              />
+
+              <p className="text-[11px] leading-5 text-slate-400">
+                Returning before the required timer/session
+                is completed will not qualify the activity.
+              </p>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-xl border border-slate-800 bg-[#0c1016] p-3">
+              <Video
+                size={16}
+                className="mt-0.5 shrink-0 text-purple-400"
+              />
+
+              <p className="text-[11px] leading-5 text-slate-400">
+                Each activity can only be completed once.
+              </p>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-xl border border-slate-800 bg-[#0c1016] p-3">
+              <Sparkles
+                size={16}
+                className="mt-0.5 shrink-0 text-amber-400"
+              />
+
+              <p className="text-[11px] leading-5 text-slate-400">
+                Your daily activity limit depends on your
+                active membership plan.
+              </p>
+            </div>
+
           </div>
         </section>
 
@@ -174,7 +315,7 @@ export default function VideosPage() {
             />
 
             <p className="mt-3 text-sm font-semibold text-slate-400">
-              Loading videos...
+              Finding an available activity...
             </p>
           </div>
         )}
@@ -182,12 +323,12 @@ export default function VideosPage() {
         {/* ERROR */}
         {!loading && errorMessage && (
           <div className="rounded-[20px] border border-red-500/20 bg-[#11151b] p-6 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/10 text-xl font-black text-red-400">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/10 text-lg font-black text-red-400">
               !
             </div>
 
             <h3 className="mt-4 text-base font-bold">
-              Unable to Load Videos
+              Activity Unavailable
             </h3>
 
             <p className="mt-2 break-words text-xs leading-5 text-slate-500">
@@ -196,7 +337,7 @@ export default function VideosPage() {
 
             <button
               type="button"
-              onClick={() => void loadVideos()}
+              onClick={() => void loadAvailableVideo()}
               className="mt-5 rounded-xl bg-blue-600 px-5 py-3 text-xs font-bold text-white transition hover:bg-blue-500"
             >
               Try Again
@@ -204,110 +345,102 @@ export default function VideosPage() {
           </div>
         )}
 
-        {/* EMPTY */}
+        {/* NO VIDEO */}
         {!loading &&
           !errorMessage &&
-          videos.length === 0 && (
+          !video && (
             <div className="rounded-[20px] border border-slate-800 bg-[#11151b] p-8 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-800/60 text-slate-500">
                 <Video size={25} />
               </div>
 
               <h3 className="mt-4 text-base font-bold">
-                No Videos Available
+                No Activity Available
               </h3>
 
               <p className="mt-2 text-xs leading-5 text-slate-500">
-                There are no active videos right now.
-                Please check again later.
+                You have completed the currently available
+                activities. Please check again later.
               </p>
             </div>
           )}
 
-        {/* VIDEO ROWS */}
+        {/* WATCH CARD */}
         {!loading &&
           !errorMessage &&
-          videos.length > 0 && (
-            <section className="space-y-2">
-              {videos.map((video) => (
-                <a
-                  key={video.id}
-                  href={`/dashboard/videos/${video.id}`}
-                  className="group flex items-center gap-3 rounded-2xl border border-slate-800 bg-[#11151b] p-3.5 transition hover:border-blue-500/30 hover:bg-blue-500/[0.03]"
-                >
-                  {/* VIDEO ICON */}
-                  <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
-                    <PlayCircle size={21} />
+          video && (
+            <section className="rounded-[20px] border border-blue-500/20 bg-[#11151b] p-5 shadow-[0_0_40px_rgba(37,99,235,0.06)]">
 
-                    <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-[#11151b]" />
-                  </div>
-
-                  {/* INFORMATION */}
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-sm font-bold text-white">
-                      {video.title}
-                    </h3>
-
-                    <div className="mt-1 flex items-center gap-2">
-                      <span className="flex items-center gap-1 text-[9px] font-semibold text-green-400">
-                        <CheckCircle2 size={10} />
-                        Available
-                      </span>
-
-                      <span className="text-slate-700">
-                        •
-                      </span>
-
-                      <span className="flex items-center gap-1 text-[9px] text-slate-600">
-                        <Clock3 size={10} />
-                        Watch
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* REWARD */}
-                  <div className="shrink-0 text-right">
-                    <p className="text-[8px] font-bold uppercase tracking-wider text-slate-600">
-                      Reward
-                    </p>
-
-                    <p className="mt-0.5 text-sm font-black text-green-400">
-                      +${video.reward.toFixed(2)}
-                    </p>
-                  </div>
-
-                  {/* ARROW */}
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition group-hover:bg-blue-500">
-                    <ArrowRight size={16} />
-                  </div>
-                </a>
-              ))}
-            </section>
-          )}
-
-        {/* INFO */}
-        {!loading &&
-          !errorMessage &&
-          videos.length > 0 && (
-            <section className="mt-5 rounded-2xl border border-amber-500/10 bg-amber-500/[0.04] p-4">
-              <div className="flex items-start gap-3">
-                <Sparkles
-                  size={17}
-                  className="mt-0.5 shrink-0 text-amber-400"
-                />
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-400">
+                  <PlayCircle size={25} />
+                </div>
 
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-amber-400">
-                    Important
+                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-400">
+                    Available
                   </p>
 
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    Watch the complete video before
-                    attempting to claim its reward.
-                    Each video can only be completed
-                    once.
-                  </p>
+                  <h3 className="mt-1 text-base font-black">
+                    New Video Activity
+                  </h3>
                 </div>
+
+                <div className="ml-auto h-2.5 w-2.5 rounded-full bg-green-400 shadow-[0_0_10px_rgba(74,222,128,0.5)]" />
+              </div>
+
+              {/* CONDITIONS WITH BUTTON */}
+              <div className="mt-5 rounded-2xl border border-slate-800 bg-[#0c1016] p-4">
+
+                <div className="mb-4">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-600">
+                    Conditions
+                  </p>
+
+                  <ul className="mt-3 space-y-2">
+                    <li className="flex gap-2 text-[11px] leading-5 text-slate-400">
+                      <span className="text-blue-400">•</span>
+                      Complete the required timer/session.
+                    </li>
+
+                    <li className="flex gap-2 text-[11px] leading-5 text-slate-400">
+                      <span className="text-blue-400">•</span>
+                      Do not leave before completion.
+                    </li>
+
+                    <li className="flex gap-2 text-[11px] leading-5 text-slate-400">
+                      <span className="text-blue-400">•</span>
+                      One activity can only be completed once.
+                    </li>
+                  </ul>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void startVideo()}
+                  disabled={starting}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3.5 text-xs font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {starting ? (
+                    <>
+                      <Loader2
+                        size={16}
+                        className="animate-spin"
+                      />
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <PlayCircle size={17} />
+                      Watch Now
+                    </>
+                  )}
+                </button>
+
+                <p className="mt-3 text-center text-[9px] leading-4 text-slate-600">
+                  Activity details and reward values are handled
+                  automatically by EarnNova.
+                </p>
               </div>
             </section>
           )}
@@ -322,6 +455,7 @@ export default function VideosPage() {
             Earn • Grow • Repeat
           </p>
         </footer>
+
       </div>
     </main>
   );

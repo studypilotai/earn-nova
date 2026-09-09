@@ -96,10 +96,7 @@ export default function DashboardPage() {
        * LOAD PROFILE
        */
 
-      const {
-        data,
-        error,
-      } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
         .select(`
           id,
@@ -179,10 +176,6 @@ export default function DashboardPage() {
 
       /*
        * LOAD LATEST PENDING ACTIVATION
-       *
-       * IMPORTANT:
-       * The activation system now uses:
-       * public.activations
        */
 
       const {
@@ -215,10 +208,6 @@ export default function DashboardPage() {
           activationError
         );
 
-        /*
-         * Do not break dashboard if activation
-         * read has an RLS problem.
-         */
         setActivationRequest(null);
       } else {
         setActivationRequest(
@@ -293,11 +282,13 @@ export default function DashboardPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#070b10] px-5 text-white">
         <div className="text-center">
+
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-slate-800 border-t-blue-500" />
 
           <p className="text-sm font-semibold text-slate-400">
             Loading EarnNova...
           </p>
+
         </div>
       </main>
     );
@@ -310,6 +301,7 @@ export default function DashboardPage() {
   if (errorMessage || !profile) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#070b10] px-5 text-white">
+
         <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-[#11151b] p-6 shadow-2xl">
 
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 text-red-400">
@@ -433,7 +425,7 @@ export default function DashboardPage() {
   );
 
   const membership =
-    profile.membership?.trim() || "Free";
+    profile.membership?.trim() || "No Plan";
 
   const displayName =
     profile.full_name?.trim() ||
@@ -449,6 +441,7 @@ export default function DashboardPage() {
   const hasActivePlan =
     normalizedMembership !== "" &&
     normalizedMembership !== "free" &&
+    normalizedMembership !== "no plan" &&
     normalizedMembership !== "none" &&
     normalizedMembership !== "inactive" &&
     normalizedMembership !== "pending";
@@ -464,6 +457,20 @@ export default function DashboardPage() {
 
   const hasPendingActivation =
     requestStatus === "pending";
+
+  /*
+   * PLAN DISPLAY
+   *
+   * This is what will appear inside the
+   * balance card instead of "Active".
+   */
+
+  const planDisplay =
+    hasPendingActivation
+      ? "Pending"
+      : hasActivePlan
+      ? membership
+      : "No Plan";
 
   /*
    * PROTECTED LINKS
@@ -685,35 +692,9 @@ export default function DashboardPage() {
             </section>
           )}
 
-        {/* ACTIVE PLAN */}
-
-        {hasActivePlan && (
-          <section className="mb-4 rounded-2xl border border-emerald-500/10 bg-emerald-500/[0.04] px-4 py-3">
-
-            <div className="flex items-center gap-3">
-
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
-                <Crown size={17} />
-              </div>
-
-              <div>
-
-                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-emerald-400">
-                  Active Membership
-                </p>
-
-                <p className="mt-1 text-sm font-black text-white">
-                  {membership}
-                </p>
-
-              </div>
-
-            </div>
-
-          </section>
-        )}
-
+        {/* ================================================= */}
         {/* BALANCE */}
+        {/* ================================================= */}
 
         <section className="rounded-[22px] border border-slate-800 bg-[#11151b] p-5 shadow-2xl sm:p-6">
 
@@ -742,6 +723,8 @@ export default function DashboardPage() {
               </p>
 
             </div>
+
+            {/* DEPOSIT + WITHDRAW ONLY HERE */}
 
             <div className="flex shrink-0 items-center gap-2">
 
@@ -781,6 +764,8 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-3">
 
+            {/* TOTAL EARNED */}
+
             <div>
 
               <p className="text-[9px] uppercase tracking-[0.13em] text-slate-500">
@@ -792,6 +777,8 @@ export default function DashboardPage() {
               </p>
 
             </div>
+
+            {/* PENDING */}
 
             <div className="border-l border-slate-800 pl-4">
 
@@ -805,10 +792,12 @@ export default function DashboardPage() {
 
             </div>
 
+            {/* PLAN NAME */}
+
             <div className="flex justify-end">
 
               <div
-                className={`flex h-fit items-center gap-2 rounded-full px-3 py-1.5 ${
+                className={`flex max-w-[120px] items-center gap-2 rounded-full px-3 py-1.5 ${
                   hasActivePlan
                     ? "bg-emerald-500/10"
                     : hasPendingActivation
@@ -818,7 +807,7 @@ export default function DashboardPage() {
               >
 
                 <span
-                  className={`h-2 w-2 rounded-full ${
+                  className={`h-2 w-2 shrink-0 rounded-full ${
                     hasActivePlan
                       ? "bg-emerald-400"
                       : hasPendingActivation
@@ -828,19 +817,16 @@ export default function DashboardPage() {
                 />
 
                 <span
-                  className={`text-[9px] font-bold uppercase ${
+                  className={`truncate text-[9px] font-bold uppercase ${
                     hasActivePlan
                       ? "text-emerald-400"
                       : hasPendingActivation
                       ? "text-amber-400"
                       : "text-slate-400"
                   }`}
+                  title={planDisplay}
                 >
-                  {hasPendingActivation
-                    ? "Pending"
-                    : hasActivePlan
-                    ? "Active"
-                    : "Inactive"}
+                  {planDisplay}
                 </span>
 
               </div>
@@ -848,9 +834,13 @@ export default function DashboardPage() {
             </div>
 
           </div>
+
         </section>
 
+        {/* ================================================= */}
         {/* QUICK ACCESS */}
+        {/* DEPOSIT + WITHDRAW REMOVED FROM HERE */}
+        {/* ================================================= */}
 
         <section className="mt-6">
 
@@ -930,42 +920,6 @@ export default function DashboardPage() {
               }
             />
 
-            {/* DEPOSIT */}
-
-            <DashboardAction
-              href={depositHref}
-              onClick={handleProtectedClick}
-              icon={
-                <CircleDollarSign size={22} />
-              }
-              title="Deposit"
-              description={
-                hasActivePlan
-                  ? "Add funds to your wallet"
-                  : hasPendingActivation
-                  ? "Activation pending"
-                  : "Activate a plan first"
-              }
-            />
-
-            {/* WITHDRAW */}
-
-            <DashboardAction
-              href={withdrawHref}
-              onClick={handleProtectedClick}
-              icon={
-                <Wallet size={22} />
-              }
-              title="Withdraw"
-              description={
-                hasActivePlan
-                  ? "Withdraw your earnings"
-                  : hasPendingActivation
-                  ? "Activation pending"
-                  : "Activate a plan first"
-              }
-            />
-
             {/* REFERRAL */}
 
             <DashboardAction
@@ -1026,6 +980,7 @@ export default function DashboardPage() {
             />
 
           </div>
+
         </section>
 
         {/* TODAY */}
@@ -1270,8 +1225,6 @@ export default function DashboardPage() {
               }
             >
 
-              {/* HEADER */}
-
               <div className="border-b border-slate-800 p-5">
 
                 <div className="flex items-center justify-between">
@@ -1308,8 +1261,6 @@ export default function DashboardPage() {
                 </div>
 
               </div>
-
-              {/* RECEIPT */}
 
               <div className="p-5">
 
@@ -1380,8 +1331,6 @@ export default function DashboardPage() {
                   </div>
 
                 </div>
-
-                {/* WAITING MESSAGE */}
 
                 <div className="mt-4 rounded-2xl border border-amber-500/10 bg-amber-500/[0.04] p-4">
 

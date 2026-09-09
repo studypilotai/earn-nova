@@ -8,6 +8,7 @@ import {
   Save,
   Wallet,
   CheckCircle,
+  Building2,
 } from "lucide-react";
 
 const supabase = createClient(
@@ -20,6 +21,7 @@ type WithdrawalAccount = {
   method: string;
   account_name: string | null;
   account_number: string | null;
+  bank_name: string | null;
   wallet_address: string | null;
 };
 
@@ -30,6 +32,8 @@ export default function AccountPage() {
   const [saving, setSaving] = useState(false);
 
   const [method, setMethod] = useState("USDT");
+
+  const [bankName, setBankName] = useState("");
   const [accountName, setAccountName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [walletAddress, setWalletAddress] = useState("");
@@ -69,7 +73,9 @@ export default function AccountPage() {
 
     if (data) {
       setSavedAccount(data);
+
       setMethod(data.method || "USDT");
+      setBankName(data.bank_name || "");
       setAccountName(data.account_name || "");
       setAccountNumber(data.account_number || "");
       setWalletAddress(data.wallet_address || "");
@@ -86,6 +92,10 @@ export default function AccountPage() {
       return;
     }
 
+    /* ===============================
+       USDT VALIDATION
+    =============================== */
+
     if (method === "USDT") {
       if (!walletAddress.trim()) {
         alert("Please enter your USDT wallet address.");
@@ -93,7 +103,32 @@ export default function AccountPage() {
       }
     }
 
-    if (method !== "USDT") {
+    /* ===============================
+       BANK VALIDATION
+    =============================== */
+
+    if (method === "Bank") {
+      if (!bankName.trim()) {
+        alert("Please enter bank name.");
+        return;
+      }
+
+      if (!accountName.trim()) {
+        alert("Please enter account name.");
+        return;
+      }
+
+      if (!accountNumber.trim()) {
+        alert("Please enter account number.");
+        return;
+      }
+    }
+
+    /* ===============================
+       UPAISA VALIDATION
+    =============================== */
+
+    if (method === "UPaisa") {
       if (!accountName.trim()) {
         alert("Please enter account name.");
         return;
@@ -116,26 +151,40 @@ export default function AccountPage() {
       return;
     }
 
+    const accountData = {
+      method,
+
+      bank_name:
+        method === "Bank"
+          ? bankName.trim()
+          : null,
+
+      account_name:
+        method === "USDT"
+          ? null
+          : accountName.trim(),
+
+      account_number:
+        method === "USDT"
+          ? null
+          : accountNumber.trim(),
+
+      wallet_address:
+        method === "USDT"
+          ? walletAddress.trim()
+          : null,
+
+      updated_at: new Date().toISOString(),
+    };
+
+    /* ===============================
+       UPDATE EXISTING ACCOUNT
+    =============================== */
+
     if (savedAccount) {
       const { data, error } = await supabase
         .from("withdrawal_accounts")
-        .update({
-          method,
-          account_name:
-            method === "USDT"
-              ? null
-              : accountName.trim(),
-          account_number:
-            method === "USDT"
-              ? null
-              : accountNumber.trim(),
-          wallet_address:
-            method === "USDT"
-              ? walletAddress.trim()
-              : null,
-          updated_at:
-            new Date().toISOString(),
-        })
+        .update(accountData)
         .eq("id", savedAccount.id)
         .eq("user_id", user.id)
         .select()
@@ -149,25 +198,22 @@ export default function AccountPage() {
       }
 
       setSavedAccount(data);
-      alert("Withdrawal account updated successfully.");
-    } else {
+
+      alert(
+        "Withdrawal account updated successfully."
+      );
+    }
+
+    /* ===============================
+       CREATE NEW ACCOUNT
+    =============================== */
+
+    else {
       const { data, error } = await supabase
         .from("withdrawal_accounts")
         .insert({
           user_id: user.id,
-          method,
-          account_name:
-            method === "USDT"
-              ? null
-              : accountName.trim(),
-          account_number:
-            method === "USDT"
-              ? null
-              : accountNumber.trim(),
-          wallet_address:
-            method === "USDT"
-              ? walletAddress.trim()
-              : null,
+          ...accountData,
         })
         .select()
         .single();
@@ -180,7 +226,10 @@ export default function AccountPage() {
       }
 
       setSavedAccount(data);
-      alert("Withdrawal account saved successfully.");
+
+      alert(
+        "Withdrawal account saved successfully."
+      );
     }
 
     setSaving(false);
@@ -197,8 +246,11 @@ export default function AccountPage() {
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-8 text-white">
       <div className="mx-auto max-w-2xl">
+
         {/* HEADER */}
+
         <div className="mb-8 flex items-center gap-4">
+
           <button
             onClick={() => router.push("/dashboard")}
             className="rounded-xl border border-slate-700 p-2.5 transition hover:bg-slate-800"
@@ -216,11 +268,14 @@ export default function AccountPage() {
               your earnings.
             </p>
           </div>
+
         </div>
 
         {/* STATUS */}
+
         {savedAccount && (
           <div className="mb-6 flex items-center gap-3 rounded-2xl border border-green-500/20 bg-green-500/10 p-4">
+
             <CheckCircle className="text-green-400" />
 
             <div>
@@ -232,12 +287,16 @@ export default function AccountPage() {
                 You can now request a withdrawal.
               </p>
             </div>
+
           </div>
         )}
 
         {/* FORM */}
+
         <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
+
           <div className="mb-6 flex items-center gap-3">
+
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600/10 text-blue-400">
               <Wallet size={22} />
             </div>
@@ -251,19 +310,37 @@ export default function AccountPage() {
                 Enter your withdrawal receiving details.
               </p>
             </div>
+
           </div>
 
           {/* METHOD */}
+
           <div className="mb-5">
+
             <label className="mb-2 block text-sm font-medium text-slate-300">
               Withdrawal Method
             </label>
 
             <select
               value={method}
-              onChange={(e) =>
-                setMethod(e.target.value)
-              }
+              onChange={(e) => {
+                setMethod(e.target.value);
+
+                /*
+                 * Clear fields that don't belong
+                 * to the selected method.
+                 */
+
+                if (e.target.value === "USDT") {
+                  setBankName("");
+                  setAccountName("");
+                  setAccountNumber("");
+                }
+
+                if (e.target.value === "UPaisa") {
+                  setBankName("");
+                }
+              }}
               className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
             >
               <option value="USDT">
@@ -278,11 +355,16 @@ export default function AccountPage() {
                 UPaisa
               </option>
             </select>
+
           </div>
 
-          {/* USDT */}
+          {/* ===============================
+              USDT
+          =============================== */}
+
           {method === "USDT" && (
             <div className="mb-5">
+
               <label className="mb-2 block text-sm font-medium text-slate-300">
                 USDT Wallet Address
               </label>
@@ -301,13 +383,41 @@ export default function AccountPage() {
                 Make sure the wallet address is correct
                 before saving.
               </p>
+
             </div>
           )}
 
-          {/* ACCOUNT NAME */}
-          {method !== "USDT" && (
+          {/* ===============================
+              BANK ACCOUNT
+          =============================== */}
+
+          {method === "Bank" && (
             <>
+              {/* BANK NAME */}
+
               <div className="mb-5">
+
+                <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300">
+                  <Building2 size={15} />
+                  Bank Name
+                </label>
+
+                <input
+                  type="text"
+                  value={bankName}
+                  onChange={(e) =>
+                    setBankName(e.target.value)
+                  }
+                  placeholder="Enter bank name"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
+                />
+
+              </div>
+
+              {/* ACCOUNT NAME */}
+
+              <div className="mb-5">
+
                 <label className="mb-2 block text-sm font-medium text-slate-300">
                   Account Name
                 </label>
@@ -321,12 +431,15 @@ export default function AccountPage() {
                   placeholder="Enter account holder name"
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
                 />
+
               </div>
 
               {/* ACCOUNT NUMBER */}
+
               <div className="mb-5">
+
                 <label className="mb-2 block text-sm font-medium text-slate-300">
-                  Account Number
+                  Account Number / IBAN
                 </label>
 
                 <input
@@ -335,19 +448,71 @@ export default function AccountPage() {
                   onChange={(e) =>
                     setAccountNumber(e.target.value)
                   }
-                  placeholder="Enter account number"
+                  placeholder="Enter account number or IBAN"
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
                 />
+
+              </div>
+            </>
+          )}
+
+          {/* ===============================
+              UPAISA
+          =============================== */}
+
+          {method === "UPaisa" && (
+            <>
+              {/* ACCOUNT NAME */}
+
+              <div className="mb-5">
+
+                <label className="mb-2 block text-sm font-medium text-slate-300">
+                  Account Name
+                </label>
+
+                <input
+                  type="text"
+                  value={accountName}
+                  onChange={(e) =>
+                    setAccountName(e.target.value)
+                  }
+                  placeholder="Enter account holder name"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
+                />
+
+              </div>
+
+              {/* ACCOUNT NUMBER */}
+
+              <div className="mb-5">
+
+                <label className="mb-2 block text-sm font-medium text-slate-300">
+                  UPaisa Account Number
+                </label>
+
+                <input
+                  type="text"
+                  value={accountNumber}
+                  onChange={(e) =>
+                    setAccountNumber(e.target.value
+                    )
+                  }
+                  placeholder="Enter UPaisa number"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
+                />
+
               </div>
             </>
           )}
 
           {/* SAVE */}
+
           <button
             onClick={saveAccount}
             disabled={saving}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3.5 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
+
             <Save size={18} />
 
             {saving
@@ -355,11 +520,15 @@ export default function AccountPage() {
               : savedAccount
               ? "Update Account"
               : "Save Account"}
+
           </button>
+
         </div>
 
         {/* FEE INFO */}
+
         <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+
           <p className="text-sm font-semibold text-slate-300">
             Withdrawal Fee
           </p>
@@ -375,7 +544,9 @@ export default function AccountPage() {
               $9 received
             </span>
           </p>
+
         </div>
+
       </div>
     </main>
   );

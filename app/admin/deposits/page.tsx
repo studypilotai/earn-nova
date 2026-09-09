@@ -36,6 +36,12 @@ type Deposit = {
   } | null;
 };
 
+type Profile = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+};
+
 export default function AdminDepositsPage() {
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,7 +59,14 @@ export default function AdminDepositsPage() {
     setLoading(true);
 
     try {
-      const { data, error } = await supabase
+      // --------------------------------------------------
+      // 1. LOAD DEPOSITS
+      // --------------------------------------------------
+
+      const {
+        data: depositData,
+        error: depositsError,
+      } = await supabase
         .from("deposits")
         .select(`
           id,
@@ -65,40 +78,123 @@ export default function AdminDepositsPage() {
           status,
           admin_note,
           created_at,
-          updated_at,
-          profiles (
-            full_name,
-            email
-          )
+          updated_at
         `)
         .order("created_at", {
           ascending: false,
         });
 
-      if (error) {
-        console.error("DEPOSITS ERROR:", error);
-        alert(error.message);
+      if (depositsError) {
+        console.error(
+          "DEPOSITS ERROR:",
+          depositsError
+        );
+
+        alert(depositsError.message);
         return;
       }
 
-      const formatted = (data || []).map((item: any) => ({
-        ...item,
-        amount: Number(item.amount || 0),
-        profile: Array.isArray(item.profiles)
-          ? item.profiles[0] || null
-          : item.profiles || null,
-      }));
+      const rawDeposits = depositData || [];
+
+      // --------------------------------------------------
+      // 2. GET UNIQUE USER IDS
+      // --------------------------------------------------
+
+      const userIds = [
+        ...new Set(
+          rawDeposits.map(
+            (deposit) => deposit.user_id
+          )
+        ),
+      ];
+
+      // --------------------------------------------------
+      // 3. LOAD PROFILES SEPARATELY
+      // --------------------------------------------------
+
+      let profiles: Profile[] = [];
+
+      if (userIds.length > 0) {
+        const {
+          data: profileData,
+          error: profilesError,
+        } = await supabase
+          .from("profiles")
+          .select(`
+            id,
+            full_name,
+            email
+          `)
+          .in("id", userIds);
+
+        if (profilesError) {
+          console.error(
+            "PROFILES ERROR:",
+            profilesError
+          );
+
+          // Deposits should still load even if
+          // profile lookup fails.
+          profiles = [];
+        } else {
+          profiles = profileData || [];
+        }
+      }
+
+      // --------------------------------------------------
+      // 4. CREATE PROFILE MAP
+      // --------------------------------------------------
+
+      const profileMap = new Map<
+        string,
+        {
+          full_name: string | null;
+          email: string | null;
+        }
+      >(
+        profiles.map((profile) => [
+          profile.id,
+          {
+            full_name: profile.full_name,
+            email: profile.email,
+          },
+        ])
+      );
+
+      // --------------------------------------------------
+      // 5. ATTACH PROFILE TO EACH DEPOSIT
+      // --------------------------------------------------
+
+      const formatted: Deposit[] =
+        rawDeposits.map((item) => ({
+          ...item,
+          amount: Number(item.amount || 0),
+          profile:
+            profileMap.get(item.user_id) || null,
+        }));
 
       setDeposits(formatted);
     } catch (error) {
-      console.error("LOAD DEPOSITS ERROR:", error);
-      alert("Unable to load deposit requests.");
+      console.error(
+        "LOAD DEPOSITS ERROR:",
+        error
+      );
+
+      alert(
+        "Unable to load deposit requests."
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  async function approveDeposit(deposit: Deposit) {
+  // --------------------------------------------------
+  // APPROVE DEPOSIT
+  // --------------------------------------------------
+
+  async function approveDeposit(
+    deposit: Deposit
+  ) {
     if (processing) return;
 
     const confirmed = window.confirm(
@@ -116,49 +212,76 @@ export default function AdminDepositsPage() {
     setProcessing(deposit.id);
 
     try {
-      const { data, error } = await supabase.rpc(
+      const {
+        data,
+        error,
+      } = await supabase.rpc(
         "admin_approve_deposit",
         {
           p_deposit_id: deposit.id,
-          p_admin_note: "Deposit approved by admin.",
+          p_admin_note:
+            "Deposit approved by admin.",
         }
       );
 
       if (error) {
-        console.error("APPROVE ERROR:", error);
+        console.error(
+          "APPROVE ERROR:",
+          error
+        );
+
         alert(error.message);
         return;
       }
 
-      console.log("APPROVED:", data);
+      console.log(
+        "APPROVED:",
+        data
+      );
 
       setSelectedDeposit(null);
 
       await loadDeposits();
 
-      alert("Deposit approved successfully.");
+      alert(
+        "Deposit approved successfully."
+      );
     } catch (error) {
-      console.error("APPROVE DEPOSIT ERROR:", error);
-      alert("Unable to approve deposit.");
+      console.error(
+        "APPROVE DEPOSIT ERROR:",
+        error
+      );
+
+      alert(
+        "Unable to approve deposit."
+      );
     } finally {
       setProcessing(null);
     }
   }
 
-  async function rejectDeposit(deposit: Deposit) {
+  // --------------------------------------------------
+  // REJECT DEPOSIT
+  // --------------------------------------------------
+
+  async function rejectDeposit(
+    deposit: Deposit
+  ) {
     if (processing) return;
 
-    const note =
-      window.prompt(
-        "Enter rejection reason:"
-      );
+    const note = window.prompt(
+      "Enter rejection reason:"
+    );
 
     if (note === null) return;
 
     setProcessing(deposit.id);
 
     try {
-      const { data, error } = await supabase.rpc(
+      const {
+        data,
+        error,
+      } = await supabase.rpc(
         "admin_reject_deposit",
         {
           p_deposit_id: deposit.id,
@@ -169,70 +292,138 @@ export default function AdminDepositsPage() {
       );
 
       if (error) {
-        console.error("REJECT ERROR:", error);
+        console.error(
+          "REJECT ERROR:",
+          error
+        );
+
         alert(error.message);
         return;
       }
 
-      console.log("REJECTED:", data);
+      console.log(
+        "REJECTED:",
+        data
+      );
 
       setSelectedDeposit(null);
 
       await loadDeposits();
 
-      alert("Deposit rejected.");
+      alert(
+        "Deposit rejected."
+      );
     } catch (error) {
-      console.error("REJECT DEPOSIT ERROR:", error);
-      alert("Unable to reject deposit.");
+      console.error(
+        "REJECT DEPOSIT ERROR:",
+        error
+      );
+
+      alert(
+        "Unable to reject deposit."
+      );
     } finally {
       setProcessing(null);
     }
   }
 
-  const filteredDeposits = deposits.filter((deposit) => {
-    const profile = deposit.profile;
+  // --------------------------------------------------
+  // SEARCH + FILTER
+  // --------------------------------------------------
 
-    const searchText = search.toLowerCase();
+  const filteredDeposits =
+    deposits.filter((deposit) => {
+      const profile =
+        deposit.profile;
 
-    const matchesSearch =
-      !search ||
-      deposit.id.toLowerCase().includes(searchText) ||
-      deposit.user_id.toLowerCase().includes(searchText) ||
-      deposit.method.toLowerCase().includes(searchText) ||
-      profile?.full_name
-        ?.toLowerCase()
-        .includes(searchText) ||
-      profile?.email
-        ?.toLowerCase()
-        .includes(searchText) ||
-      deposit.transaction_id
-        ?.toLowerCase()
-        .includes(searchText);
+      const searchText =
+        search.toLowerCase().trim();
 
-    const matchesStatus =
-      statusFilter === "all" ||
-      deposit.status === statusFilter;
+      const matchesSearch =
+        !searchText ||
+        deposit.id
+          .toLowerCase()
+          .includes(searchText) ||
+        deposit.user_id
+          .toLowerCase()
+          .includes(searchText) ||
+        deposit.method
+          .toLowerCase()
+          .includes(searchText) ||
+        profile?.full_name
+          ?.toLowerCase()
+          .includes(searchText) ||
+        profile?.email
+          ?.toLowerCase()
+          .includes(searchText) ||
+        deposit.transaction_id
+          ?.toLowerCase()
+          .includes(searchText);
 
-    return matchesSearch && matchesStatus;
-  });
+      const matchesStatus =
+        statusFilter === "all" ||
+        deposit.status ===
+          statusFilter;
 
-  const pendingCount = deposits.filter(
-    (item) => item.status === "pending"
-  ).length;
+      return (
+        matchesSearch &&
+        matchesStatus
+      );
+    });
 
-  const approvedAmount = deposits
-    .filter((item) => item.status === "approved")
-    .reduce((sum, item) => sum + item.amount, 0);
+  // --------------------------------------------------
+  // STATS
+  // --------------------------------------------------
 
-  const pendingAmount = deposits
-    .filter((item) => item.status === "pending")
-    .reduce((sum, item) => sum + item.amount, 0);
+  const pendingCount =
+    deposits.filter(
+      (item) =>
+        item.status === "pending"
+    ).length;
 
-  function formatDate(date: string) {
-    return new Date(date).toLocaleString();
+  const approvedAmount =
+    deposits
+      .filter(
+        (item) =>
+          item.status === "approved"
+      )
+      .reduce(
+        (sum, item) =>
+          sum + item.amount,
+        0
+      );
+
+  const pendingAmount =
+    deposits
+      .filter(
+        (item) =>
+          item.status === "pending"
+      )
+      .reduce(
+        (sum, item) =>
+          sum + item.amount,
+        0
+      );
+
+  // --------------------------------------------------
+  // DATE
+  // --------------------------------------------------
+
+  function formatDate(
+    date: string
+  ) {
+    return new Date(
+      date
+    ).toLocaleString();
   }
 
-  function statusBadge(status: Deposit["status"]) {
+  // --------------------------------------------------
+  // STATUS BADGE
+  // --------------------------------------------------
+
+  function statusBadge(
+    status: Deposit["status"]
+  ) {
     if (status === "approved") {
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase text-emerald-400">
@@ -259,15 +450,17 @@ export default function AdminDepositsPage() {
     );
   }
 
+  // --------------------------------------------------
+  // UI
+  // --------------------------------------------------
+
   return (
     <main className="min-h-screen bg-[#f8fafc] px-4 py-6 text-[#111827] sm:px-6 lg:px-8">
-
       <div className="mx-auto max-w-7xl">
 
         {/* HEADER */}
 
         <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
           <div className="flex items-center gap-3">
 
             <a
@@ -278,7 +471,6 @@ export default function AdminDepositsPage() {
             </a>
 
             <div>
-
               <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600">
                 EarnNova Admin
               </p>
@@ -286,9 +478,7 @@ export default function AdminDepositsPage() {
               <h1 className="mt-1 text-2xl font-black">
                 Deposits
               </h1>
-
             </div>
-
           </div>
 
           <button
@@ -298,11 +488,15 @@ export default function AdminDepositsPage() {
           >
             <RefreshCw
               size={16}
-              className={loading ? "animate-spin" : ""}
+              className={
+                loading
+                  ? "animate-spin"
+                  : ""
+              }
             />
+
             Refresh
           </button>
-
         </header>
 
         {/* STATS */}
@@ -311,25 +505,40 @@ export default function AdminDepositsPage() {
 
           <StatCard
             title="Pending Deposits"
-            value={String(pendingCount)}
-            icon={<Clock size={20} />}
+            value={String(
+              pendingCount
+            )}
+            icon={
+              <Clock size={20} />
+            }
             type="warning"
           />
 
           <StatCard
             title="Pending Amount"
-            value={`$${pendingAmount.toFixed(2)}`}
-            icon={<DollarSign size={20} />}
+            value={`$${pendingAmount.toFixed(
+              2
+            )}`}
+            icon={
+              <DollarSign
+                size={20}
+              />
+            }
             type="blue"
           />
 
           <StatCard
             title="Approved Amount"
-            value={`$${approvedAmount.toFixed(2)}`}
-            icon={<CheckCircle size={20} />}
+            value={`$${approvedAmount.toFixed(
+              2
+            )}`}
+            icon={
+              <CheckCircle
+                size={20}
+              />
+            }
             type="success"
           />
-
         </section>
 
         {/* FILTERS */}
@@ -348,12 +557,13 @@ export default function AdminDepositsPage() {
               <input
                 value={search}
                 onChange={(e) =>
-                  setSearch(e.target.value)
+                  setSearch(
+                    e.target.value
+                  )
                 }
                 placeholder="Search user, email, transaction ID..."
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white"
               />
-
             </div>
 
             <div className="grid grid-cols-4 gap-2 lg:w-[420px]">
@@ -361,28 +571,36 @@ export default function AdminDepositsPage() {
               {[
                 ["all", "All"],
                 ["pending", "Pending"],
-                ["approved", "Approved"],
-                ["rejected", "Rejected"],
-              ].map(([value, label]) => (
-                <button
-                  key={value}
-                  onClick={() =>
-                    setStatusFilter(value)
-                  }
-                  className={`rounded-xl px-3 py-3 text-xs font-bold transition ${
-                    statusFilter === value
-                      ? "bg-blue-600 text-white"
-                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-
+                [
+                  "approved",
+                  "Approved",
+                ],
+                [
+                  "rejected",
+                  "Rejected",
+                ],
+              ].map(
+                ([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() =>
+                      setStatusFilter(
+                        value
+                      )
+                    }
+                    className={`rounded-xl px-3 py-3 text-xs font-bold transition ${
+                      statusFilter ===
+                      value
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                )
+              )}
             </div>
-
           </div>
-
         </section>
 
         {/* TABLE */}
@@ -394,25 +612,27 @@ export default function AdminDepositsPage() {
             <div className="flex items-center justify-between">
 
               <div>
-
                 <h2 className="font-black">
                   Deposit Requests
                 </h2>
 
                 <p className="mt-1 text-xs text-slate-400">
-                  {filteredDeposits.length} request
-                  {filteredDeposits.length === 1 ? "" : "s"}
+                  {
+                    filteredDeposits.length
+                  }{" "}
+                  request
+                  {filteredDeposits.length ===
+                  1
+                    ? ""
+                    : "s"}
                 </p>
-
               </div>
 
               <ShieldCheck
                 size={20}
                 className="text-blue-500"
               />
-
             </div>
-
           </div>
 
           {loading ? (
@@ -430,13 +650,15 @@ export default function AdminDepositsPage() {
                 </p>
 
               </div>
-
             </div>
-          ) : filteredDeposits.length === 0 ? (
+          ) : filteredDeposits.length ===
+            0 ? (
             <div className="flex min-h-[300px] flex-col items-center justify-center px-5 text-center">
 
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-                <DollarSign size={25} />
+                <DollarSign
+                  size={25}
+                />
               </div>
 
               <h3 className="mt-4 font-bold">
@@ -444,7 +666,8 @@ export default function AdminDepositsPage() {
               </h3>
 
               <p className="mt-1 text-sm text-slate-400">
-                Deposit requests will appear here.
+                Deposit requests will
+                appear here.
               </p>
 
             </div>
@@ -488,145 +711,177 @@ export default function AdminDepositsPage() {
                 </thead>
 
                 <tbody>
+                  {filteredDeposits.map(
+                    (deposit) => (
+                      <tr
+                        key={deposit.id}
+                        className="border-b border-slate-100 transition hover:bg-slate-50"
+                      >
 
-                  {filteredDeposits.map((deposit) => (
+                        {/* USER */}
 
-                    <tr
-                      key={deposit.id}
-                      className="border-b border-slate-100 transition hover:bg-slate-50"
-                    >
+                        <td className="px-5 py-4">
 
-                      <td className="px-5 py-4">
+                          <div>
 
-                        <div>
+                            <p className="text-sm font-bold text-slate-800">
+                              {deposit
+                                .profile
+                                ?.full_name ||
+                                "Unknown User"}
+                            </p>
 
-                          <p className="text-sm font-bold text-slate-800">
-                            {deposit.profile?.full_name ||
-                              "Unknown User"}
+                            <p className="mt-1 text-[10px] text-slate-400">
+                              {deposit
+                                .profile
+                                ?.email ||
+                                deposit.user_id}
+                            </p>
+
+                          </div>
+
+                        </td>
+
+                        {/* AMOUNT */}
+
+                        <td className="px-5 py-4">
+
+                          <p className="text-sm font-black text-slate-800">
+                            $
+                            {deposit.amount.toFixed(
+                              2
+                            )}
                           </p>
 
-                          <p className="mt-1 text-[10px] text-slate-400">
-                            {deposit.profile?.email ||
-                              deposit.user_id}
-                          </p>
+                        </td>
 
-                        </div>
+                        {/* METHOD */}
 
-                      </td>
+                        <td className="px-5 py-4">
 
-                      <td className="px-5 py-4">
-
-                        <p className="text-sm font-black text-slate-800">
-                          ${deposit.amount.toFixed(2)}
-                        </p>
-
-                      </td>
-
-                      <td className="px-5 py-4">
-
-                        <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[10px] font-bold text-slate-600">
-                          {deposit.method}
-                        </span>
-
-                      </td>
-
-                      <td className="px-5 py-4">
-
-                        <p className="max-w-[150px] truncate text-xs text-slate-500">
-                          {deposit.transaction_id ||
-                            "Not provided"}
-                        </p>
-
-                      </td>
-
-                      <td className="px-5 py-4">
-                        {statusBadge(deposit.status)}
-                      </td>
-
-                      <td className="px-5 py-4">
-
-                        <p className="text-[10px] text-slate-500">
-                          {formatDate(
-                            deposit.created_at
-                          )}
-                        </p>
-
-                      </td>
-
-                      <td className="px-5 py-4">
-
-                        <div className="flex justify-end gap-2">
-
-                          <button
-                            onClick={() =>
-                              setSelectedDeposit(
-                                deposit
-                              )
+                          <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[10px] font-bold text-slate-600">
+                            {
+                              deposit.method
                             }
-                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-                            title="View"
-                          >
-                            <Eye size={16} />
-                          </button>
+                          </span>
 
-                          {deposit.status ===
-                            "pending" && (
-                            <>
-                              <button
-                                onClick={() =>
-                                  approveDeposit(
-                                    deposit
-                                  )
-                                }
-                                disabled={
-                                  processing ===
-                                  deposit.id
-                                }
-                                className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white transition hover:bg-emerald-700 disabled:opacity-50"
-                                title="Approve"
-                              >
-                                <CheckCircle
-                                  size={16}
-                                />
-                              </button>
+                        </td>
 
-                              <button
-                                onClick={() =>
-                                  rejectDeposit(
-                                    deposit
-                                  )
-                                }
-                                disabled={
-                                  processing ===
-                                  deposit.id
-                                }
-                                className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-600 text-white transition hover:bg-red-700 disabled:opacity-50"
-                                title="Reject"
-                              >
-                                <XCircle
-                                  size={16}
-                                />
-                              </button>
-                            </>
+                        {/* TRANSACTION */}
+
+                        <td className="px-5 py-4">
+
+                          <p className="max-w-[150px] truncate text-xs text-slate-500">
+                            {deposit
+                              .transaction_id ||
+                              "Not provided"}
+                          </p>
+
+                        </td>
+
+                        {/* STATUS */}
+
+                        <td className="px-5 py-4">
+                          {statusBadge(
+                            deposit.status
                           )}
+                        </td>
 
-                        </div>
+                        {/* DATE */}
 
-                      </td>
+                        <td className="px-5 py-4">
 
-                    </tr>
+                          <p className="text-[10px] text-slate-500">
+                            {formatDate(
+                              deposit.created_at
+                            )}
+                          </p>
 
-                  ))}
+                        </td>
 
+                        {/* ACTION */}
+
+                        <td className="px-5 py-4">
+
+                          <div className="flex justify-end gap-2">
+
+                            {/* VIEW */}
+
+                            <button
+                              onClick={() =>
+                                setSelectedDeposit(
+                                  deposit
+                                )
+                              }
+                              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                              title="View"
+                            >
+                              <Eye
+                                size={16}
+                              />
+                            </button>
+
+                            {/* APPROVE */}
+
+                            {deposit.status ===
+                              "pending" && (
+                              <>
+                                <button
+                                  onClick={() =>
+                                    approveDeposit(
+                                      deposit
+                                    )
+                                  }
+                                  disabled={
+                                    processing ===
+                                    deposit.id
+                                  }
+                                  className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                                  title="Approve"
+                                >
+                                  <CheckCircle
+                                    size={
+                                      16
+                                    }
+                                  />
+                                </button>
+
+                                {/* REJECT */}
+
+                                <button
+                                  onClick={() =>
+                                    rejectDeposit(
+                                      deposit
+                                    )
+                                  }
+                                  disabled={
+                                    processing ===
+                                    deposit.id
+                                  }
+                                  className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-600 text-white transition hover:bg-red-700 disabled:opacity-50"
+                                  title="Reject"
+                                >
+                                  <XCircle
+                                    size={
+                                      16
+                                    }
+                                  />
+                                </button>
+                              </>
+                            )}
+
+                          </div>
+                        </td>
+
+                      </tr>
+                    )
+                  )}
                 </tbody>
 
               </table>
-
             </div>
           )}
-
         </section>
-
       </div>
 
       {/* DETAILS MODAL */}
@@ -645,18 +900,25 @@ export default function AdminDepositsPage() {
                 </p>
 
                 <h2 className="mt-1 text-xl font-black">
-                  ${selectedDeposit.amount.toFixed(2)}
+                  $
+                  {selectedDeposit.amount.toFixed(
+                    2
+                  )}
                 </h2>
 
               </div>
 
               <button
                 onClick={() =>
-                  setSelectedDeposit(null)
+                  setSelectedDeposit(
+                    null
+                  )
                 }
                 className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200"
               >
-                <XCircle size={18} />
+                <XCircle
+                  size={18}
+                />
               </button>
 
             </div>
@@ -666,7 +928,8 @@ export default function AdminDepositsPage() {
               <DetailRow
                 label="User"
                 value={
-                  selectedDeposit.profile
+                  selectedDeposit
+                    .profile
                     ?.full_name ||
                   "Unknown User"
                 }
@@ -675,7 +938,8 @@ export default function AdminDepositsPage() {
               <DetailRow
                 label="Email"
                 value={
-                  selectedDeposit.profile
+                  selectedDeposit
+                    .profile
                     ?.email ||
                   "N/A"
                 }
@@ -683,25 +947,32 @@ export default function AdminDepositsPage() {
 
               <DetailRow
                 label="User ID"
-                value={selectedDeposit.user_id}
+                value={
+                  selectedDeposit.user_id
+                }
               />
 
               <DetailRow
                 label="Method"
-                value={selectedDeposit.method}
+                value={
+                  selectedDeposit.method
+                }
               />
 
               <DetailRow
                 label="Transaction ID"
                 value={
-                  selectedDeposit.transaction_id ||
+                  selectedDeposit
+                    .transaction_id ||
                   "Not provided"
                 }
               />
 
               <DetailRow
                 label="Status"
-                value={selectedDeposit.status}
+                value={
+                  selectedDeposit.status
+                }
               />
 
               <DetailRow
@@ -714,7 +985,9 @@ export default function AdminDepositsPage() {
               {selectedDeposit.admin_note && (
                 <DetailRow
                   label="Admin Note"
-                  value={selectedDeposit.admin_note}
+                  value={
+                    selectedDeposit.admin_note
+                  }
                 />
               )}
 
@@ -736,7 +1009,9 @@ export default function AdminDepositsPage() {
                   }
                   className="flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-red-700 disabled:opacity-50"
                 >
-                  <XCircle size={17} />
+                  <XCircle
+                    size={17}
+                  />
                   Reject
                 </button>
 
@@ -752,7 +1027,9 @@ export default function AdminDepositsPage() {
                   }
                   className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50"
                 >
-                  <CheckCircle size={17} />
+                  <CheckCircle
+                    size={17}
+                  />
                   Approve
                 </button>
 
@@ -760,13 +1037,15 @@ export default function AdminDepositsPage() {
             )}
 
           </div>
-
         </div>
       )}
-
     </main>
   );
 }
+
+// --------------------------------------------------
+// STAT CARD
+// --------------------------------------------------
 
 function StatCard({
   title,
@@ -777,17 +1056,22 @@ function StatCard({
   title: string;
   value: string;
   icon: React.ReactNode;
-  type: "warning" | "blue" | "success";
+  type:
+    | "warning"
+    | "blue"
+    | "success";
 }) {
   const styles = {
     warning: {
       box: "bg-amber-50 border-amber-100",
       icon: "bg-amber-100 text-amber-600",
     },
+
     blue: {
       box: "bg-blue-50 border-blue-100",
       icon: "bg-blue-100 text-blue-600",
     },
+
     success: {
       box: "bg-emerald-50 border-emerald-100",
       icon: "bg-emerald-100 text-emerald-600",
@@ -820,10 +1104,13 @@ function StatCard({
         </div>
 
       </div>
-
     </div>
   );
 }
+
+// --------------------------------------------------
+// DETAIL ROW
+// --------------------------------------------------
 
 function DetailRow({
   label,

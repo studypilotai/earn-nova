@@ -4,52 +4,61 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
+  ArrowRight,
   Crown,
   Gem,
   Medal,
   Sparkles,
   Zap,
-  ArrowRight,
+  ShieldCheck,
+  Check,
+  PlayCircle,
+  ListTodo,
 } from "lucide-react";
 
 const plans = [
   {
-    name: "Bronze",
-    price: 5,
-    dailyTasks: 10,
-    dailyEarning: "0.30",
+    name: "Starter",
+    price: 2.5,
+    tasks: "10–20",
+    videos: "40–60",
+    description: "A simple start for new members",
     icon: Medal,
     popular: false,
   },
   {
-    name: "Silver",
-    price: 10,
-    dailyTasks: 20,
-    dailyEarning: "0.70",
+    name: "Basic",
+    price: 5,
+    tasks: "20–40",
+    videos: "80–120",
+    description: "More opportunities to earn",
     icon: Zap,
-    popular: true,
-  },
-  {
-    name: "Gold",
-    price: 25,
-    dailyTasks: 40,
-    dailyEarning: "2.00",
-    icon: Crown,
     popular: false,
   },
   {
-    name: "Platinum",
-    price: 50,
-    dailyTasks: 60,
-    dailyEarning: "4.50",
+    name: "Pro",
+    price: 10,
+    tasks: "30–60",
+    videos: "160–240",
+    description: "More earning opportunities",
+    icon: Crown,
+    popular: true,
+  },
+  {
+    name: "Premium",
+    price: 20,
+    tasks: "50–80",
+    videos: "280–420",
+    description: "For active members",
     icon: Gem,
     popular: false,
   },
   {
-    name: "Diamond",
-    price: 100,
-    dailyTasks: 100,
-    dailyEarning: "10.00",
+    name: "VIP",
+    price: 50,
+    tasks: "70–100",
+    videos: "400–600",
+    description: "Maximum access and opportunities",
     icon: Sparkles,
     popular: false,
   },
@@ -60,11 +69,7 @@ const PLAN_DURATION_MONTHS = 3;
 export default function PlansPage() {
   const router = useRouter();
 
-  const handleSelectPlan = (
-    plan: (typeof plans)[number]
-  ) => {
-    // Price is the TOTAL price for 3 months.
-    // No multiplication.
+  const handleSelectPlan = (plan: (typeof plans)[number]) => {
     const totalPrice = plan.price;
 
     localStorage.setItem(
@@ -72,10 +77,10 @@ export default function PlansPage() {
       JSON.stringify({
         name: plan.name,
         monthlyPrice: plan.price,
-        totalPrice: totalPrice,
+        totalPrice,
         months: PLAN_DURATION_MONTHS,
-        dailyTasks: plan.dailyTasks,
-        dailyEarning: plan.dailyEarning,
+        taskRange: plan.tasks,
+        videoRange: plan.videos,
       })
     );
 
@@ -84,281 +89,265 @@ export default function PlansPage() {
 
   return (
     <main className="min-h-screen bg-[#070b14] px-4 py-6 text-white sm:px-6">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-4xl">
 
         {/* HEADER */}
-
-        <div className="mb-6 flex items-center justify-between">
-
+        <div className="mb-8 flex items-center justify-between">
           <Link
             href="/dashboard"
-            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/[0.08]"
+            className="group inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2.5 text-xs font-semibold text-slate-300 transition hover:border-blue-500/30 hover:bg-blue-500/[0.06] hover:text-white"
           >
-            <ArrowLeft size={15} />
+            <ArrowLeft
+              size={15}
+              className="transition-transform group-hover:-translate-x-0.5"
+            />
             Dashboard
           </Link>
 
           <div className="text-right">
-
-            <p className="text-[9px] uppercase tracking-[0.2em] text-slate-500">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.25em] text-blue-400/70">
               EarnNova
             </p>
 
-            <p className="text-sm font-bold">
-              Membership Plans
+            <p className="mt-0.5 text-sm font-bold text-white">
+              Membership
             </p>
-
           </div>
-
         </div>
 
-        {/* TITLE */}
+        {/* HERO */}
+        <section className="mb-7 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-blue-500/20 bg-blue-500/10 text-blue-400 shadow-lg shadow-blue-500/5">
+            <Crown size={22} />
+          </div>
 
-        <div className="mb-6 text-center">
-
-          <h1 className="text-2xl font-black sm:text-3xl">
+          <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
             Choose Your{" "}
-            <span className="text-blue-400">
-              Plan
-            </span>
+            <span className="text-blue-400">Plan</span>
           </h1>
 
-          <p className="mt-2 text-xs text-slate-500">
-            One-time fee • Valid for 3 months
+          <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-500">
+            Select a membership that matches your earning activity.
           </p>
+        </section>
 
-        </div>
+        {/* MEMBERSHIP BADGE */}
+        <div className="mb-6 flex justify-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/[0.06] px-4 py-2">
+            <ShieldCheck size={14} className="text-blue-400" />
 
-        {/* FIXED 3 MONTH NOTICE */}
+            <span className="text-[10px] font-bold text-slate-300">
+              3-Month Membership
+            </span>
 
-        <div className="mb-5 rounded-2xl border border-blue-500/20 bg-blue-500/[0.05] p-4">
+            <span className="h-1 w-1 rounded-full bg-slate-600" />
 
-          <div className="flex items-center justify-center gap-3">
-
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
-              <Crown size={19} />
-            </div>
-
-            <div>
-
-              <p className="text-xs font-black text-white">
-                3 Month Membership
-              </p>
-
-              <p className="mt-1 text-[9px] text-slate-500">
-                Plan price includes the complete 3-month period
-              </p>
-
-            </div>
-
+            <span className="text-[10px] text-slate-500">
+              One-time payment
+            </span>
           </div>
-
         </div>
 
         {/* PLANS */}
-
-        <div className="space-y-3">
-
+        <div className="grid gap-4 md:grid-cols-2">
           {plans.map((plan) => {
             const Icon = plan.icon;
-
-            // IMPORTANT:
-            // plan.price is already the total 3-month fee.
-            const totalPrice = plan.price;
 
             return (
               <div
                 key={plan.name}
-                className={`relative rounded-2xl border p-4 transition ${
+                className={`group relative overflow-hidden rounded-2xl border p-5 transition-all duration-200 ${
                   plan.popular
-                    ? "border-blue-500/50 bg-blue-500/[0.07]"
-                    : "border-white/10 bg-white/[0.035] hover:border-white/20"
+                    ? "border-blue-500/40 bg-gradient-to-br from-blue-500/[0.10] via-white/[0.035] to-white/[0.02] shadow-xl shadow-blue-950/20"
+                    : "border-white/10 bg-white/[0.035] hover:border-blue-500/20 hover:bg-white/[0.05]"
                 }`}
               >
-
-                {/* POPULAR */}
-
+                {/* DECORATIVE GLOW */}
                 {plan.popular && (
-                  <span className="absolute right-3 top-3 rounded-full bg-blue-600 px-2.5 py-1 text-[8px] font-bold uppercase tracking-wider">
-                    Popular
-                  </span>
+                  <div className="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-blue-500/10 blur-3xl" />
                 )}
 
-                <div className="flex items-center gap-4">
+                {/* RECOMMENDED */}
+                {plan.popular && (
+                  <div className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-blue-400/20 bg-blue-500/10 px-2.5 py-1">
+                    <Sparkles size={10} className="text-blue-400" />
 
-                  {/* ICON */}
+                    <span className="text-[8px] font-black uppercase tracking-wider text-blue-300">
+                      Recommended
+                    </span>
+                  </div>
+                )}
 
+                {/* PLAN HEADER */}
+                <div className="relative flex items-center gap-4">
                   <div
-                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border ${
                       plan.popular
-                        ? "bg-blue-500/15 text-blue-400"
-                        : "bg-white/[0.06] text-slate-300"
+                        ? "border-blue-500/20 bg-blue-500/10 text-blue-400"
+                        : "border-white/10 bg-white/[0.05] text-slate-300"
                     }`}
                   >
                     <Icon size={21} />
                   </div>
 
-                  {/* PLAN NAME + TOTAL PRICE */}
+                  <div>
+                    <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                      EarnNova
+                    </p>
 
-                  <div className="min-w-[105px]">
-
-                    <h2 className="text-base font-black">
+                    <h2 className="mt-0.5 text-lg font-black text-white">
                       {plan.name}
                     </h2>
+                  </div>
+                </div>
 
-                    <p className="mt-0.5 text-lg font-bold text-white">
+                {/* PRICE */}
+                <div className="relative mt-5">
+                  <div className="flex items-end gap-2">
+                    <span className="text-3xl font-black tracking-tight">
                       ${plan.price}
+                    </span>
 
-                      <span className="ml-1 text-[9px] font-medium text-slate-500">
-                        / 3 months
-                      </span>
-                    </p>
-
+                    <span className="mb-1 text-[10px] font-medium text-slate-500">
+                      / 3 months
+                    </span>
                   </div>
 
-                  {/* STATS */}
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    {plan.description}
+                  </p>
+                </div>
 
-                  <div className="hidden flex-1 items-center justify-center gap-8 sm:flex">
+                {/* TASK + VIDEO ACCESS */}
+                <div className="relative mt-5 grid grid-cols-2 gap-3 border-t border-white/10 pt-4">
 
-                    <div>
+                  {/* TASKS */}
+                  <div className="rounded-xl border border-white/5 bg-black/20 p-3">
+                    <div className="mb-2 flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10">
+                        <ListTodo
+                          size={14}
+                          className="text-blue-400"
+                        />
+                      </div>
 
-                      <p className="text-[8px] uppercase text-slate-500">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
                         Tasks
-                      </p>
-
-                      <p className="mt-1 text-sm font-bold">
-                        {plan.dailyTasks}
-                      </p>
-
+                      </span>
                     </div>
 
-                    <div>
+                    <p className="text-sm font-black text-white">
+                      {plan.tasks}
+                    </p>
 
-                      <p className="text-[8px] uppercase text-slate-500">
-                        Daily Earn
-                      </p>
+                    <p className="mt-0.5 text-[8px] text-slate-600">
+                      Daily opportunities
+                    </p>
+                  </div>
 
-                      <p className="mt-1 text-sm font-bold text-emerald-400">
-                        ${plan.dailyEarning}
-                      </p>
+                  {/* VIDEOS */}
+                  <div className="rounded-xl border border-white/5 bg-black/20 p-3">
+                    <div className="mb-2 flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10">
+                        <PlayCircle
+                          size={14}
+                          className="text-blue-400"
+                        />
+                      </div>
 
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                        Videos
+                      </span>
                     </div>
 
-                    <div>
+                    <p className="text-sm font-black text-white">
+                      {plan.videos}
+                    </p>
 
-                      <p className="text-[8px] uppercase text-slate-500">
-                        Total
-                      </p>
+                    <p className="mt-0.5 text-[8px] text-slate-600">
+                      Daily opportunities
+                    </p>
+                  </div>
+                </div>
 
-                      <p className="mt-1 text-sm font-bold text-blue-400">
-                        ${totalPrice}
-                      </p>
+                {/* FEATURES */}
+                <div className="relative mt-4 space-y-2 border-t border-white/10 pt-4">
 
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/10">
+                      <Check
+                        size={11}
+                        className="text-blue-400"
+                      />
                     </div>
 
+                    <span className="text-[10px] text-slate-400">
+                      Separate task & video access
+                    </span>
                   </div>
 
-                  {/* BUTTON */}
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/10">
+                      <Check
+                        size={11}
+                        className="text-blue-400"
+                      />
+                    </div>
 
-                  <button
-                    onClick={() =>
-                      handleSelectPlan(plan)
-                    }
-                    className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2.5 text-[10px] font-bold transition ${
-                      plan.popular
-                        ? "bg-blue-600 text-white hover:bg-blue-500"
-                        : "bg-white/[0.08] text-white hover:bg-white/[0.13]"
-                    }`}
-                  >
-                    Select
-                    <ArrowRight size={13} />
-                  </button>
-
+                    <span className="text-[10px] text-slate-400">
+                      3-month membership access
+                    </span>
+                  </div>
                 </div>
 
-                {/* MOBILE STATS */}
+                {/* SELECT BUTTON */}
+                <button
+                  onClick={() => handleSelectPlan(plan)}
+                  className={`relative mt-5 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold transition-all ${
+                    plan.popular
+                      ? "bg-blue-600 text-white shadow-lg shadow-blue-900/20 hover:bg-blue-500"
+                      : "border border-white/10 bg-white/[0.07] text-white hover:border-blue-500/20 hover:bg-blue-500/[0.08]"
+                  }`}
+                >
+                  Select {plan.name}
 
-                <div className="mt-3 grid grid-cols-3 gap-2 border-t border-white/10 pt-3 sm:hidden">
-
-                  <div className="rounded-lg bg-black/20 p-2 text-center">
-
-                    <p className="text-[8px] text-slate-500">
-                      Tasks
-                    </p>
-
-                    <p className="mt-1 text-xs font-bold">
-                      {plan.dailyTasks}
-                    </p>
-
-                  </div>
-
-                  <div className="rounded-lg bg-black/20 p-2 text-center">
-
-                    <p className="text-[8px] text-slate-500">
-                      Daily
-                    </p>
-
-                    <p className="mt-1 text-xs font-bold text-emerald-400">
-                      ${plan.dailyEarning}
-                    </p>
-
-                  </div>
-
-                  <div className="rounded-lg bg-black/20 p-2 text-center">
-
-                    <p className="text-[8px] text-slate-500">
-                      3 Months
-                    </p>
-
-                    <p className="mt-1 text-xs font-bold text-blue-400">
-                      ${totalPrice}
-                    </p>
-
-                  </div>
-
-                </div>
-
-                {/* VALIDITY */}
-
-                <div className="mt-2 flex items-center justify-end gap-1">
-
-                  <span className="text-[8px] text-slate-600">
-                    Valid for
-                  </span>
-
-                  <span className="text-[8px] font-bold text-slate-400">
-                    3 Months
-                  </span>
-
-                </div>
-
+                  <ArrowRight
+                    size={14}
+                    className="transition-transform group-hover:translate-x-0.5"
+                  />
+                </button>
               </div>
             );
           })}
-
         </div>
 
-        {/* RENEWAL INFO */}
+        {/* INFORMATION */}
+        <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
+              <ShieldCheck size={17} />
+            </div>
 
-        <div className="mt-5 rounded-2xl border border-amber-500/10 bg-amber-500/[0.04] p-4 text-center">
+            <div>
+              <p className="text-[11px] font-bold text-slate-300">
+                Membership Information
+              </p>
 
-          <p className="text-[10px] font-bold text-amber-400">
-            Membership Renewal
-          </p>
-
-          <p className="mt-1 text-[9px] leading-5 text-slate-600">
-            Your membership is valid for 3 months.
-            After expiry, you will need to renew your
-            plan to continue using earning features.
-          </p>
-
+              <p className="mt-1 text-[9px] leading-5 text-slate-600">
+                Your selected membership remains active for 3 months.
+                Task and video availability may vary according to your
+                selected membership and platform availability.
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* FOOTER */}
-
-        <p className="py-6 text-center text-[9px] text-slate-600">
-          Select a plan to continue to activation.
-        </p>
+        <div className="py-6 text-center">
+          <p className="text-[9px] text-slate-600">
+            Choose a membership to continue to activation.
+          </p>
+        </div>
 
       </div>
     </main>

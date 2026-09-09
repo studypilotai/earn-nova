@@ -11,6 +11,8 @@ import {
   Plus,
   RefreshCw,
   Wallet,
+  Video,
+  ChevronRight,
 } from "lucide-react";
 
 const supabase = createClient(
@@ -48,10 +50,6 @@ export default function AdminDashboard() {
     try {
       setRefreshing(true);
 
-      // ---------------------------------------------
-      // CHECK AUTH
-      // ---------------------------------------------
-
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -61,103 +59,69 @@ export default function AdminDashboard() {
         return;
       }
 
-      // ---------------------------------------------
-      // CHECK ADMIN
-      // ---------------------------------------------
-
       const { data: profile, error: profileError } =
         await supabase
           .from("profiles")
           .select("role")
           .eq("id", user.id)
-          .single();
+          .maybeSingle();
 
-      if (profileError) {
-        console.error("Profile error:", profileError);
+      if (
+        profileError ||
+        !profile ||
+        profile.role !== "admin"
+      ) {
         window.location.href = "/admin/login";
         return;
       }
 
-      if (profile?.role !== "admin") {
-        window.location.href = "/dashboard";
-        return;
-      }
-
-      // ---------------------------------------------
+      // ============================
       // TOTAL USERS
-      // ---------------------------------------------
+      // ============================
 
-      const { count: usersCount, error: usersError } =
-        await supabase
-          .from("profiles")
-          .select("*", {
-            count: "exact",
-            head: true,
-          })
-          .eq("role", "customer");
-
-      if (usersError) {
-        console.error("Users error:", usersError);
-      }
-
-      // ---------------------------------------------
-      // TOTAL WALLET
-      // ---------------------------------------------
-
-      const { data: profiles, error: walletError } =
-        await supabase
-          .from("profiles")
-          .select("wallet")
-          .eq("role", "customer");
-
-      if (walletError) {
-        console.error("Wallet error:", walletError);
-      }
-
-      // ---------------------------------------------
-      // PENDING WITHDRAWALS
-      // ---------------------------------------------
-
-      const {
-        count: withdrawalsCount,
-        error: withdrawalsError,
-      } = await supabase
-        .from("withdrawals")
+      const { count: usersCount } = await supabase
+        .from("profiles")
         .select("*", {
           count: "exact",
           head: true,
         })
-        .eq("status", "pending");
-
-      if (withdrawalsError) {
-        console.error(
-          "Withdrawals error:",
-          withdrawalsError
-        );
-      }
-
-      // ---------------------------------------------
-      // REFERRALS
-      // ---------------------------------------------
-
-      const {
-        data: referralProfiles,
-        error: referralError,
-      } = await supabase
-        .from("profiles")
-        .select("total_referrals")
         .eq("role", "customer");
 
-      if (referralError) {
-        console.error(
-          "Referral error:",
-          referralError
-        );
-      }
+      // ============================
+      // TOTAL WALLET
+      // ============================
 
-      // ---------------------------------------------
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("wallet")
+        .eq("role", "customer");
+
+      // ============================
+      // PENDING WITHDRAWALS
+      // ============================
+
+      const { count: withdrawalsCount } =
+        await supabase
+          .from("withdrawals")
+          .select("*", {
+            count: "exact",
+            head: true,
+          })
+          .eq("status", "pending");
+
+      // ============================
+      // REFERRALS
+      // ============================
+
+      const { data: referralProfiles } =
+        await supabase
+          .from("profiles")
+          .select("total_referrals")
+          .eq("role", "customer");
+
+      // ============================
       // TASKS
-      // ---------------------------------------------
+      // ============================
 
       const { data: taskData, error: taskError } =
         await supabase
@@ -173,36 +137,12 @@ export default function AdminDashboard() {
         console.error("Tasks error:", taskError);
       }
 
-      // ---------------------------------------------
-      // SET USERS
-      // ---------------------------------------------
-
-      setTotalUsers(usersCount || 0);
-
-      // ---------------------------------------------
-      // CALCULATE WALLET
-      // ---------------------------------------------
-
       const walletTotal =
         profiles?.reduce(
           (sum, profile) =>
             sum + Number(profile.wallet || 0),
           0
         ) || 0;
-
-      setTotalWallet(walletTotal);
-
-      // ---------------------------------------------
-      // SET WITHDRAWALS
-      // ---------------------------------------------
-
-      setPendingWithdrawals(
-        withdrawalsCount || 0
-      );
-
-      // ---------------------------------------------
-      // CALCULATE REFERRALS
-      // ---------------------------------------------
 
       const referralTotal =
         referralProfiles?.reduce(
@@ -212,12 +152,12 @@ export default function AdminDashboard() {
           0
         ) || 0;
 
+      setTotalUsers(usersCount || 0);
+      setTotalWallet(walletTotal);
+      setPendingWithdrawals(
+        withdrawalsCount || 0
+      );
       setTotalReferrals(referralTotal);
-
-      // ---------------------------------------------
-      // SET TASKS
-      // ---------------------------------------------
-
       setTasks((taskData || []) as Task[]);
     } catch (error) {
       console.error(
@@ -234,67 +174,51 @@ export default function AdminDashboard() {
     loadDashboard();
   }, []);
 
-  // ---------------------------------------------
-  // LOADING
-  // ---------------------------------------------
-
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-100 p-6">
-        <div className="flex min-h-[70vh] items-center justify-center">
-          <div className="rounded-xl bg-white px-6 py-4 text-sm font-medium text-slate-500 shadow-sm">
-            Loading dashboard...
-          </div>
+      <div className="flex min-h-[70vh] items-center justify-center bg-slate-100">
+        <div className="rounded-xl bg-white px-6 py-4 text-sm font-medium text-slate-500 shadow-sm">
+          Loading dashboard...
         </div>
       </div>
     );
   }
 
-  // ---------------------------------------------
-  // DASHBOARD
-  // ---------------------------------------------
-
   return (
     <div className="min-h-screen bg-slate-100">
 
-      {/* ==========================================
-          HEADER
-      ========================================== */}
+      {/* ================================
+          DESKTOP PAGE HEADER
+      ================================= */}
 
-      <div className="border-b border-slate-200 bg-white">
-        <div className="flex flex-col gap-5 px-5 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+      <header className="border-b border-slate-200 bg-white">
+
+        <div className="flex flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
 
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
+            <h1 className="text-2xl font-bold text-slate-900">
               Admin Dashboard
             </h1>
 
-            <p className="mt-1 text-sm text-slate-500 sm:text-base">
+            <p className="mt-1 text-sm text-slate-500">
               Manage your EarnNova platform
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-
-            {/* ADD BALANCE */}
+          <div className="flex flex-wrap items-center gap-3">
 
             <a
               href="/admin/add-balance"
-              className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
+              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
             >
               <Wallet size={18} />
-
-              <span className="hidden sm:inline">
-                Add Balance
-              </span>
+              Add Balance
             </a>
-
-            {/* REFRESH */}
 
             <button
               onClick={loadDashboard}
               disabled={refreshing}
-              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
             >
               <RefreshCw
                 size={18}
@@ -305,24 +229,24 @@ export default function AdminDashboard() {
                 }
               />
 
-              <span className="hidden sm:inline">
-                Refresh
-              </span>
+              Refresh
             </button>
 
           </div>
+
         </div>
-      </div>
 
-      {/* ==========================================
+      </header>
+
+      {/* ================================
           CONTENT
-      ========================================== */}
+      ================================= */}
 
-      <div className="p-5 sm:p-8">
+      <main className="p-4 sm:p-6 lg:p-8">
 
-        {/* ========================================
+        {/* ============================
             STATS
-        ======================================== */}
+        ============================= */}
 
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
 
@@ -352,103 +276,76 @@ export default function AdminDashboard() {
 
         </div>
 
-        {/* ========================================
+        {/* ============================
             QUICK ACTIONS
-        ======================================== */}
+        ============================= */}
 
         <div className="mt-8 grid grid-cols-1 gap-5 md:grid-cols-3">
 
-          <a
+          <QuickAction
             href="/admin/add-balance"
-            className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
-          >
-            <div className="flex items-center gap-4">
+            icon={<Wallet size={22} />}
+            title="Add Balance"
+            description="Add funds to any user wallet"
+          />
 
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition group-hover:bg-blue-600 group-hover:text-white">
-                <Wallet size={22} />
-              </div>
-
-              <div>
-                <h3 className="font-bold text-slate-900">
-                  Add Balance
-                </h3>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  Add funds to any user wallet
-                </p>
-              </div>
-
-            </div>
-          </a>
-
-          <a
+          <QuickAction
             href="/admin/deposits"
-            className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
-          >
-            <div className="flex items-center gap-4">
+            icon={<WalletCards size={22} />}
+            title="Deposits"
+            description="Manage deposit requests"
+          />
 
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition group-hover:bg-blue-600 group-hover:text-white">
-                <WalletCards size={22} />
-              </div>
-
-              <div>
-                <h3 className="font-bold text-slate-900">
-                  Deposits
-                </h3>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  Manage deposit requests
-                </p>
-              </div>
-
-            </div>
-          </a>
-
-          <a
-            href="/admin/tasks"
-            className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
-          >
-            <div className="flex items-center gap-4">
-
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition group-hover:bg-blue-600 group-hover:text-white">
-                <ListChecks size={22} />
-              </div>
-
-              <div>
-                <h3 className="font-bold text-slate-900">
-                  Tasks
-                </h3>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  Create and manage tasks
-                </p>
-              </div>
-
-            </div>
-          </a>
+          <QuickAction
+            href="/admin/videos"
+            icon={<Video size={22} />}
+            title="Videos"
+            description="Manage earning videos"
+          />
 
         </div>
 
-        {/* ========================================
-            TASKS
-        ======================================== */}
+        <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-3">
+
+          <QuickAction
+            href="/admin/tasks"
+            icon={<ListChecks size={22} />}
+            title="Tasks"
+            description="Create and manage tasks"
+          />
+
+          <QuickAction
+            href="/admin/withdrawals"
+            icon={<Download size={22} />}
+            title="Withdrawals"
+            description="Review withdrawal requests"
+          />
+
+          <QuickAction
+            href="/admin/users"
+            icon={<Users size={22} />}
+            title="Users"
+            description="Manage platform users"
+          />
+
+        </div>
+
+        {/* ============================
+            TASK MANAGEMENT
+        ============================= */}
 
         <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-
-          {/* TASK HEADER */}
 
           <div className="flex flex-col gap-4 border-b border-slate-200 p-6 sm:flex-row sm:items-center sm:justify-between">
 
             <div>
-
               <h2 className="text-xl font-bold text-slate-900">
                 Tasks Management
               </h2>
 
-              <p className="mt-1 text-sm text-slate-500 sm:text-base">
+              <p className="mt-1 text-sm text-slate-500">
                 Create and manage earning tasks for users.
               </p>
-
             </div>
 
             <a
@@ -456,13 +353,10 @@ export default function AdminDashboard() {
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
             >
               <Plus size={18} />
-
               Add Task
             </a>
 
           </div>
-
-          {/* NO TASKS */}
 
           {tasks.length === 0 ? (
 
@@ -488,7 +382,6 @@ export default function AdminDashboard() {
                 className="mt-6 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700"
               >
                 <Plus size={18} />
-
                 Add First Task
               </a>
 
@@ -563,27 +456,73 @@ export default function AdminDashboard() {
 
                   <a
                     href="/admin/tasks"
-                    className="text-sm font-semibold text-blue-600 hover:text-blue-500"
+                    className="inline-flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-500"
                   >
-                    View all tasks →
+                    View all tasks
+                    <ChevronRight size={15} />
                   </a>
 
                 </div>
               )}
 
             </div>
+
           )}
 
         </div>
 
-      </div>
+      </main>
+
     </div>
   );
 }
 
-/* =====================================================
+/* =========================================
+   QUICK ACTION
+========================================= */
+
+function QuickAction({
+  href,
+  icon,
+  title,
+  description,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <a
+      href={href}
+      className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
+    >
+      <div className="flex items-center gap-4">
+
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition group-hover:bg-blue-600 group-hover:text-white">
+          {icon}
+        </div>
+
+        <div className="min-w-0">
+
+          <h3 className="font-bold text-slate-900">
+            {title}
+          </h3>
+
+          <p className="mt-1 text-sm text-slate-500">
+            {description}
+          </p>
+
+        </div>
+
+      </div>
+    </a>
+  );
+}
+
+/* =========================================
    STAT CARD
-===================================================== */
+========================================= */
 
 function StatCard({
   title,
