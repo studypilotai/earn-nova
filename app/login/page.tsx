@@ -1,15 +1,19 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 
-const supabase = createClient(
+/* =========================================================
+   SUPABASE BROWSER CLIENT
+   ========================================================= */
+
+const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
 /* =========================================================
-   EARNNOVA LOGO — SAME AS DASHBOARD
+   EARNNOVA LOGO
    ========================================================= */
 
 function LogoMark() {
@@ -132,6 +136,10 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  /* =======================================================
+     LOGIN
+     ======================================================= */
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
@@ -140,6 +148,10 @@ export default function LoginPage() {
     setError("");
 
     const cleanEmail = email.trim().toLowerCase();
+
+    /* -------------------------------------------------------
+       VALIDATION
+       ------------------------------------------------------- */
 
     if (!cleanEmail) {
       setError("Please enter your email address.");
@@ -159,25 +171,39 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      /* -----------------------------------------------------
+         SUPABASE LOGIN
+         ----------------------------------------------------- */
+
       const { data, error: loginError } =
         await supabase.auth.signInWithPassword({
           email: cleanEmail,
           password,
         });
 
-      if (loginError) {
-        console.error("Supabase login error:", loginError);
+      /* -----------------------------------------------------
+         LOGIN ERROR
+         ----------------------------------------------------- */
 
-        const message = loginError.message.toLowerCase();
+      if (loginError) {
+        console.error(
+          "Supabase login error:",
+          loginError
+        );
+
+        const message =
+          loginError.message.toLowerCase();
 
         if (
           message.includes("invalid login") ||
           message.includes("invalid credentials")
         ) {
           setError("Incorrect email or password.");
-        } else if (message.includes("email not confirmed")) {
+        } else if (
+          message.includes("email not confirmed")
+        ) {
           setError(
-            "Email verification is enabled in Supabase. Please disable email confirmation in Supabase Authentication settings."
+            "Please confirm your email before logging in."
           );
         } else {
           setError(loginError.message);
@@ -187,22 +213,42 @@ export default function LoginPage() {
         return;
       }
 
+      /* -----------------------------------------------------
+         USER CHECK
+         ----------------------------------------------------- */
+
       if (!data.user) {
         setError("Login failed. Please try again.");
         setLoading(false);
         return;
       }
 
+      /* -----------------------------------------------------
+         SESSION CHECK
+         ----------------------------------------------------- */
+
       if (!data.session) {
         setError(
           "Could not create a login session. Please try again."
         );
+
         setLoading(false);
         return;
       }
 
-      localStorage.setItem("earnNovaLoggedIn", "true");
-      localStorage.setItem("earnNovaUserEmail", cleanEmail);
+      /* -----------------------------------------------------
+         LOCAL STORAGE
+         ----------------------------------------------------- */
+
+      localStorage.setItem(
+        "earnNovaLoggedIn",
+        "true"
+      );
+
+      localStorage.setItem(
+        "earnNovaUserEmail",
+        cleanEmail
+      );
 
       if (data.user.user_metadata?.full_name) {
         localStorage.setItem(
@@ -212,19 +258,26 @@ export default function LoginPage() {
       }
 
       if (rememberMe) {
-        localStorage.setItem("earnNovaRemember", "true");
+        localStorage.setItem(
+          "earnNovaRemember",
+          "true"
+        );
       } else {
-        localStorage.removeItem("earnNovaRemember");
+        localStorage.removeItem(
+          "earnNovaRemember"
+        );
       }
 
-      /*
-       * IMPORTANT:
-       * Login ke baad hamesha Dashboard.
-       * No redirect query.
-       */
+      /* -----------------------------------------------------
+         DASHBOARD
+         ----------------------------------------------------- */
+
       window.location.replace("/dashboard");
     } catch (err) {
-      console.error("Unexpected login error:", err);
+      console.error(
+        "Unexpected login error:",
+        err
+      );
 
       setError(
         "Something went wrong. Please try again."
@@ -237,7 +290,9 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
 
-      {/* HEADER */}
+      {/* =====================================================
+          HEADER
+          ===================================================== */}
 
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
@@ -250,7 +305,9 @@ export default function LoginPage() {
 
             <div>
               <div className="text-[20px] font-black tracking-tight text-slate-950">
-                Earn<span className="text-blue-600">Nova</span>
+                Earn<span className="text-blue-600">
+                  Nova
+                </span>
               </div>
 
               <div className="text-[9px] font-semibold uppercase tracking-[0.24em] text-slate-400">
@@ -260,6 +317,7 @@ export default function LoginPage() {
           </a>
 
           <div className="flex items-center gap-3">
+
             <span className="hidden text-sm text-slate-500 sm:block">
               Don&apos;t have an account?
             </span>
@@ -270,18 +328,23 @@ export default function LoginPage() {
             >
               Sign Up
             </a>
+
           </div>
 
         </div>
       </header>
 
-      {/* MAIN */}
+      {/* =====================================================
+          MAIN
+          ===================================================== */}
 
       <section className="mx-auto flex min-h-[calc(100vh-80px)] max-w-7xl items-center px-5 py-10 sm:px-8">
 
         <div className="grid w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-200/60 lg:grid-cols-2">
 
-          {/* LEFT */}
+          {/* =================================================
+              LEFT SIDE
+              ================================================= */}
 
           <div className="relative hidden overflow-hidden bg-slate-950 p-10 lg:flex lg:flex-col lg:justify-between xl:p-14">
 
@@ -336,11 +399,15 @@ export default function LoginPage() {
 
           </div>
 
-          {/* RIGHT */}
+          {/* =================================================
+              RIGHT SIDE
+              ================================================= */}
 
           <div className="p-6 sm:p-10 lg:p-12 xl:p-14">
 
             <div className="mx-auto max-w-md">
+
+              {/* HEADER */}
 
               <div className="mb-8">
 
@@ -358,13 +425,19 @@ export default function LoginPage() {
 
               </div>
 
-              {/* ERROR */}
+              {/* =================================================
+                  ERROR
+                  ================================================= */}
 
               {error && (
                 <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium leading-6 text-red-600">
                   {error}
                 </div>
               )}
+
+              {/* =================================================
+                  FORM
+                  ================================================= */}
 
               <form
                 onSubmit={handleSubmit}
@@ -462,7 +535,7 @@ export default function LoginPage() {
 
                 </div>
 
-                {/* REMEMBER */}
+                {/* REMEMBER ME */}
 
                 <label className="flex cursor-pointer items-center gap-3">
 
@@ -484,7 +557,7 @@ export default function LoginPage() {
 
                 </label>
 
-                {/* LOGIN */}
+                {/* LOGIN BUTTON */}
 
                 <button
                   type="submit"
@@ -508,7 +581,9 @@ export default function LoginPage() {
 
               </form>
 
-              {/* SIGNUP */}
+              {/* =================================================
+                  SIGNUP
+                  ================================================= */}
 
               <div className="my-7 flex items-center gap-4">
 
@@ -523,16 +598,21 @@ export default function LoginPage() {
               </div>
 
               <p className="text-center text-sm text-slate-500">
+
                 Don&apos;t have an account?{" "}
+
                 <a
                   href="/signup"
                   className="font-extrabold text-blue-600 hover:text-blue-700"
                 >
                   Create Account
                 </a>
+
               </p>
 
-              {/* SECURITY */}
+              {/* =================================================
+                  SECURITY
+                  ================================================= */}
 
               <div className="mt-8 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
 
@@ -556,13 +636,16 @@ export default function LoginPage() {
               </div>
 
             </div>
+
           </div>
 
         </div>
 
       </section>
 
-      {/* FOOTER */}
+      {/* =====================================================
+          FOOTER
+          ===================================================== */}
 
       <footer className="border-t border-slate-200 bg-white">
 
