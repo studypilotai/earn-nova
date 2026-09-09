@@ -1,6 +1,10 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import {
+  FormEvent,
+  Suspense,
+  useState,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -16,7 +20,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-export default function AdminLoginPage() {
+function AdminLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -25,7 +29,9 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function handleLogin(e: FormEvent<HTMLFormElement>) {
+  async function handleLogin(
+    e: FormEvent<HTMLFormElement>
+  ) {
     e.preventDefault();
 
     if (loading) return;
@@ -37,42 +43,65 @@ export default function AdminLoginPage() {
       const cleanEmail = email.trim();
 
       if (!cleanEmail || !password) {
-        setError("Email aur password dono enter karo.");
+        setError(
+          "Email aur password dono enter karo."
+        );
         setLoading(false);
         return;
       }
 
       // Supabase login
-      const { data, error: loginError } =
-        await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password,
-        });
+      const {
+        data,
+        error: loginError,
+      } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
 
       if (loginError) {
-        console.error("ADMIN LOGIN ERROR:", loginError);
+        console.error(
+          "ADMIN LOGIN ERROR:",
+          loginError
+        );
+
         setError(loginError.message);
         setLoading(false);
         return;
       }
 
       if (!data.user) {
-        setError("Login nahi hua. Dobara try karo.");
+        setError(
+          "Login nahi hua. Dobara try karo."
+        );
         setLoading(false);
         return;
       }
 
-      console.log("ADMIN AUTH USER:", data.user.id);
+      console.log(
+        "ADMIN AUTH USER:",
+        data.user.id
+      );
 
       // Existing admin profile check
-      const { data: profile, error: profileError } = await supabase
+      const {
+        data: profile,
+        error: profileError,
+      } = await supabase
         .from("profiles")
         .select("id, role, email")
         .eq("id", data.user.id)
         .maybeSingle();
 
-      console.log("ADMIN PROFILE:", profile);
-      console.log("PROFILE ERROR:", profileError);
+      console.log(
+        "ADMIN PROFILE:",
+        profile
+      );
+
+      console.log(
+        "PROFILE ERROR:",
+        profileError
+      );
 
       if (profileError) {
         await supabase.auth.signOut();
@@ -110,13 +139,16 @@ export default function AdminLoginPage() {
 
       // Login successful
       const redirect =
-        searchParams.get("redirect") || "/admin";
+        searchParams.get("redirect") ||
+        "/admin";
 
       router.replace(redirect);
       router.refresh();
-
     } catch (err) {
-      console.error("ADMIN LOGIN EXCEPTION:", err);
+      console.error(
+        "ADMIN LOGIN EXCEPTION:",
+        err
+      );
 
       setError(
         err instanceof Error
@@ -129,16 +161,19 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#020617] text-white flex items-center justify-center px-4 py-10">
+    <main className="flex min-h-screen items-center justify-center bg-[#020617] px-4 py-10 text-white">
       <div className="w-full max-w-md">
 
-        <div className="text-center mb-8">
+        <div className="mb-8 text-center">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 shadow-lg shadow-blue-600/20">
             <ShieldCheck size={30} />
           </div>
 
           <h1 className="text-4xl font-bold">
-            Earn<span className="text-blue-500">Nova</span>
+            Earn
+            <span className="text-blue-500">
+              Nova
+            </span>
           </h1>
 
           <p className="mt-2 text-slate-400">
@@ -154,11 +189,15 @@ export default function AdminLoginPage() {
             </h2>
 
             <p className="mt-2 text-sm text-slate-400">
-              Sign in to manage your EarnNova platform.
+              Sign in to manage your EarnNova
+              platform.
             </p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form
+            onSubmit={handleLogin}
+            className="space-y-5"
+          >
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-300">
@@ -174,7 +213,9 @@ export default function AdminLoginPage() {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) =>
+                    setEmail(e.target.value)
+                  }
                   placeholder="admin@example.com"
                   autoComplete="email"
                   disabled={loading}
@@ -197,7 +238,9 @@ export default function AdminLoginPage() {
                 <input
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) =>
+                    setPassword(e.target.value)
+                  }
                   placeholder="Enter your password"
                   autoComplete="current-password"
                   disabled={loading}
@@ -242,5 +285,29 @@ export default function AdminLoginPage() {
 
       </div>
     </main>
+  );
+}
+
+function AdminLoginFallback() {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#020617] px-4 py-10 text-white">
+      <div className="text-center">
+        <Loader2
+          size={28}
+          className="mx-auto animate-spin text-blue-500"
+        />
+        <p className="mt-3 text-sm text-slate-400">
+          Loading admin login...
+        </p>
+      </div>
+    </main>
+  );
+}
+
+export default function AdminLoginPage() {
+  return (
+    <Suspense fallback={<AdminLoginFallback />}>
+      <AdminLoginForm />
+    </Suspense>
   );
 }
