@@ -1,88 +1,22 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { createBrowserClient } from "@supabase/ssr";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 /* =========================================================
-   SUPABASE BROWSER CLIENT
-   ========================================================= */
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-/* =========================================================
-   EARNNOVA LOGO
+   ICONS
    ========================================================= */
 
 function LogoMark() {
   return (
-    <div className="relative flex h-12 w-12 items-center justify-center">
-      <div className="absolute inset-0 rounded-[15px] bg-blue-600/20 blur-md" />
-
-      <div className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-[15px] border border-blue-400/20 bg-gradient-to-br from-white via-slate-100 to-blue-50 shadow-xl">
-        <div className="absolute -right-3 -top-3 h-7 w-7 rounded-full bg-blue-500/20 blur-md" />
-
-        <div className="relative flex items-center justify-center">
-          <span className="text-[21px] font-black italic tracking-[-0.15em] text-slate-950">
-            E
-          </span>
-
-          <span className="-ml-0.5 text-[21px] font-black italic tracking-[-0.15em] text-blue-600">
-            N
-          </span>
-        </div>
-
-        <div className="absolute bottom-1.5 left-2 h-[2px] w-5 rounded-full bg-blue-500" />
-      </div>
+    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-cyan-400 shadow-lg shadow-blue-500/20">
+      <span className="text-lg font-black text-white">E</span>
     </div>
   );
 }
 
-/* =========================================================
-   EYE ICON
-   ========================================================= */
-
-function EyeIcon({ open }: { open: boolean }) {
-  return open ? (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  ) : (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M3 3l18 18" />
-      <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
-      <path d="M9.9 4.2A10.6 10.6 0 0 1 12 4c6.5 0 10 8 10 8a18.2 18.2 0 0 1-3.1 4.3" />
-      <path d="M6.6 6.6C3.7 8.6 2 12 2 12s3.5 8 10 8c1.7 0 3.2-.4 4.5-1.1" />
-    </svg>
-  );
-}
-
-/* =========================================================
-   ARROW ICON
-   ========================================================= */
-
-function ArrowIcon() {
+function ArrowRightIcon() {
   return (
     <svg
       width="18"
@@ -91,18 +25,11 @@ function ArrowIcon() {
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
     >
-      <path d="M5 12h14" />
-      <path d="m13 6 6 6-6 6" />
+      <path d="m9 18 6-6-6-6" />
     </svg>
   );
 }
-
-/* =========================================================
-   SHIELD ICON
-   ========================================================= */
 
 function ShieldIcon() {
   return (
@@ -112,9 +39,7 @@ function ShieldIcon() {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      strokeWidth="2"
     >
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
       <path d="m9 12 2 2 4-4" />
@@ -123,122 +48,144 @@ function ShieldIcon() {
 }
 
 /* =========================================================
-   LOGIN PAGE
+   PAGE
    ========================================================= */
 
 export default function LoginPage() {
+  const router = useRouter();
+  const supabase = createClient();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
+  const [remember, setRemember] = useState(true);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  /* =======================================================
+  /* =========================================================
      LOGIN
-     ======================================================= */
+     ========================================================= */
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleLogin(
+    e: FormEvent<HTMLFormElement>
+  ) {
     e.preventDefault();
 
-    if (loading) return;
-
     setError("");
-
-    const cleanEmail = email.trim().toLowerCase();
-
-    /* -------------------------------------------------------
-       VALIDATION
-       ------------------------------------------------------- */
-
-    if (!cleanEmail) {
-      setError("Please enter your email address.");
-      return;
-    }
-
-    if (!cleanEmail.includes("@")) {
-      setError("Please enter a valid email address.");
-      return;
-    }
-
-    if (!password) {
-      setError("Please enter your password.");
-      return;
-    }
-
     setLoading(true);
 
     try {
-      /* -----------------------------------------------------
-         SUPABASE LOGIN
-         ----------------------------------------------------- */
+      const cleanEmail = email.trim().toLowerCase();
 
-      const { data, error: loginError } =
-        await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password,
-        });
+      if (!cleanEmail || !password) {
+        setError(
+          "Please enter your email and password."
+        );
 
-      /* -----------------------------------------------------
-         LOGIN ERROR
-         ----------------------------------------------------- */
+        setLoading(false);
+        return;
+      }
+
+      const {
+        data,
+        error: loginError,
+      } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
 
       if (loginError) {
-        console.error(
-          "Supabase login error:",
-          loginError
-        );
-
-        const message =
-          loginError.message.toLowerCase();
-
-        if (
-          message.includes("invalid login") ||
-          message.includes("invalid credentials")
-        ) {
-          setError("Incorrect email or password.");
-        } else if (
-          message.includes("email not confirmed")
-        ) {
-          setError(
-            "Please confirm your email before logging in."
-          );
-        } else {
-          setError(loginError.message);
-        }
-
+        setError(loginError.message);
         setLoading(false);
         return;
       }
-
-      /* -----------------------------------------------------
-         USER CHECK
-         ----------------------------------------------------- */
 
       if (!data.user) {
-        setError("Login failed. Please try again.");
-        setLoading(false);
-        return;
-      }
-
-      /* -----------------------------------------------------
-         SESSION CHECK
-         ----------------------------------------------------- */
-
-      if (!data.session) {
         setError(
-          "Could not create a login session. Please try again."
+          "Login failed. Please try again."
         );
 
         setLoading(false);
         return;
       }
 
-      /* -----------------------------------------------------
-         LOCAL STORAGE
-         ----------------------------------------------------- */
+      /* =====================================================
+         PROFILE
+         ===================================================== */
+
+      const {
+        data: profile,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select(
+          "id, full_name, email, role, membership, is_blocked, block_reason"
+        )
+        .eq("id", data.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error(
+          "Profile error:",
+          profileError
+        );
+
+        await supabase.auth.signOut();
+
+        setError(
+          "Could not load your account profile."
+        );
+
+        setLoading(false);
+        return;
+      }
+
+      if (!profile) {
+        await supabase.auth.signOut();
+
+        setError(
+          "Account profile was not found."
+        );
+
+        setLoading(false);
+        return;
+      }
+
+      /* =====================================================
+         ADMIN PROTECTION
+         ===================================================== */
+
+      if (profile.role === "admin") {
+        await supabase.auth.signOut();
+
+        setError(
+          "Please use the admin login page."
+        );
+
+        setLoading(false);
+        return;
+      }
+
+      /* =====================================================
+         BLOCKED ACCOUNT
+         ===================================================== */
+
+      if (profile.is_blocked) {
+        await supabase.auth.signOut();
+
+        setError(
+          profile.block_reason
+            ? `Your account is blocked: ${profile.block_reason}`
+            : "Your account is blocked. Please contact support."
+        );
+
+        setLoading(false);
+        return;
+      }
+
+      /* =====================================================
+         LOCAL SESSION INFO
+         ===================================================== */
 
       localStorage.setItem(
         "earnNovaLoggedIn",
@@ -250,32 +197,71 @@ export default function LoginPage() {
         cleanEmail
       );
 
-      if (data.user.user_metadata?.full_name) {
+      localStorage.setItem(
+        "earnNovaUserId",
+        data.user.id
+      );
+
+      if (profile.full_name) {
         localStorage.setItem(
           "earnNovaUserName",
-          data.user.user_metadata.full_name
+          profile.full_name
         );
       }
 
-      if (rememberMe) {
-        localStorage.setItem(
-          "earnNovaRemember",
-          "true"
+      localStorage.setItem(
+        "earnNovaRemember",
+        remember ? "true" : "false"
+      );
+
+      /* =====================================================
+         IMPORTANT
+         Keep the selected plan if user selected one before
+         login. After login, send user to activation.
+         ===================================================== */
+
+      const selectedPlan =
+        localStorage.getItem(
+          "earnNovaSelectedPlan"
         );
-      } else {
-        localStorage.removeItem(
-          "earnNovaRemember"
-        );
+
+      if (selectedPlan) {
+        try {
+          const parsed = JSON.parse(selectedPlan);
+
+          if (
+            parsed?.name &&
+            parsed.name in {
+              Starter: 2.5,
+              Basic: 5,
+              Pro: 10,
+              Premium: 20,
+              VIP: 50,
+            }
+          ) {
+            window.location.replace(
+              `/activate?plan=${encodeURIComponent(
+                parsed.name
+              )}`
+            );
+
+            return;
+          }
+        } catch {
+          localStorage.removeItem(
+            "earnNovaSelectedPlan"
+          );
+        }
       }
 
-      /* -----------------------------------------------------
-         DASHBOARD
-         ----------------------------------------------------- */
+      /* =====================================================
+         NORMAL LOGIN
+         ===================================================== */
 
       window.location.replace("/dashboard");
     } catch (err) {
       console.error(
-        "Unexpected login error:",
+        "Login error:",
         err
       );
 
@@ -287,396 +273,194 @@ export default function LoginPage() {
     }
   }
 
+  /* =========================================================
+     UI
+     ========================================================= */
+
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-10 text-white">
+      {/* BACKGROUND GLOW */}
 
-      {/* =====================================================
-          HEADER
-          ===================================================== */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute left-1/2 top-[-180px] h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-blue-600/10 blur-3xl" />
 
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
+        <div className="absolute bottom-[-200px] right-[-100px] h-[420px] w-[420px] rounded-full bg-cyan-500/5 blur-3xl" />
+      </div>
 
-          <a
-            href="/"
-            className="flex items-center gap-3"
-          >
+      <div className="relative w-full max-w-md">
+        {/* LOGO */}
+
+        <div className="mb-8 text-center">
+          <div className="mb-5 inline-flex items-center gap-3">
             <LogoMark />
 
-            <div>
-              <div className="text-[20px] font-black tracking-tight text-slate-950">
-                Earn<span className="text-blue-600">
-                  Nova
-                </span>
-              </div>
-
-              <div className="text-[9px] font-semibold uppercase tracking-[0.24em] text-slate-400">
-                Earn • Grow • Repeat
-              </div>
-            </div>
-          </a>
-
-          <div className="flex items-center gap-3">
-
-            <span className="hidden text-sm text-slate-500 sm:block">
-              Don&apos;t have an account?
+            <span className="text-2xl font-black tracking-tight">
+              Earn<span className="text-cyan-400">Nova</span>
             </span>
-
-            <a
-              href="/signup"
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
-            >
-              Sign Up
-            </a>
-
           </div>
 
+          <h1 className="text-3xl font-black tracking-tight">
+            Welcome Back
+          </h1>
+
+          <p className="mt-2 text-sm text-slate-400">
+            Login to continue to your EarnNova account.
+          </p>
         </div>
-      </header>
 
-      {/* =====================================================
-          MAIN
-          ===================================================== */}
+        {/* LOGIN CARD */}
 
-      <section className="mx-auto flex min-h-[calc(100vh-80px)] max-w-7xl items-center px-5 py-10 sm:px-8">
+        <div className="rounded-3xl border border-blue-500/15 bg-slate-900/90 p-6 shadow-2xl shadow-blue-950/20 backdrop-blur md:p-7">
+          {/* SECURITY BADGE */}
 
-        <div className="grid w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-200/60 lg:grid-cols-2">
+          <div className="mb-6 flex items-center gap-2 rounded-xl border border-blue-500/15 bg-blue-500/5 px-3 py-2.5 text-xs text-blue-300">
+            <ShieldIcon />
 
-          {/* =================================================
-              LEFT SIDE
-              ================================================= */}
-
-          <div className="relative hidden overflow-hidden bg-slate-950 p-10 lg:flex lg:flex-col lg:justify-between xl:p-14">
-
-            <div className="absolute -right-32 -top-32 h-80 w-80 rounded-full bg-blue-600/20 blur-3xl" />
-
-            <div className="absolute -bottom-40 -left-32 h-96 w-96 rounded-full bg-cyan-500/10 blur-3xl" />
-
-            <div className="relative z-10">
-
-              <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1.5 text-xs font-bold text-blue-300">
-                <ShieldIcon />
-                Secure Account
-              </div>
-
-              <h1 className="max-w-lg text-4xl font-black leading-tight text-white xl:text-5xl">
-                Welcome
-                <span className="block text-blue-400">
-                  Back!
-                </span>
-              </h1>
-
-              <p className="mt-5 max-w-md text-base leading-7 text-slate-400">
-                Login to your EarnNova account and continue
-                earning through tasks, referrals and rewards.
-              </p>
-
-            </div>
-
-            <div className="relative z-10 mt-12 space-y-4">
-
-              {[
-                "Access your earning dashboard",
-                "Manage your wallet and earnings",
-                "Complete tasks and earn rewards",
-                "Track your referral income",
-              ].map((item) => (
-                <div
-                  key={item}
-                  className="flex items-center gap-3"
-                >
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-blue-400">
-                    ✓
-                  </div>
-
-                  <span className="text-sm font-medium text-slate-300">
-                    {item}
-                  </span>
-                </div>
-              ))}
-
-            </div>
-
+            <span>
+              Secure EarnNova account login
+            </span>
           </div>
 
-          {/* =================================================
-              RIGHT SIDE
-              ================================================= */}
+          {/* ERROR */}
 
-          <div className="p-6 sm:p-10 lg:p-12 xl:p-14">
+          {error && (
+            <div className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm leading-5 text-red-300">
+              {error}
+            </div>
+          )}
 
-            <div className="mx-auto max-w-md">
+          {/* FORM */}
 
-              {/* HEADER */}
+          <form
+            onSubmit={handleLogin}
+            className="space-y-5"
+          >
+            {/* EMAIL */}
 
-              <div className="mb-8">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">
+                Email
+              </label>
 
-                <p className="mb-2 text-sm font-bold uppercase tracking-widest text-blue-600">
-                  Account Login
-                </p>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) =>
+                  setEmail(e.target.value)
+                }
+                placeholder="you@example.com"
+                autoComplete="email"
+                disabled={loading}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </div>
 
-                <h2 className="text-3xl font-black tracking-tight text-slate-950">
-                  Sign in to EarnNova
-                </h2>
+            {/* PASSWORD */}
 
-                <p className="mt-2 text-sm text-slate-500">
-                  Enter your account details to continue.
-                </p>
-
-              </div>
-
-              {/* =================================================
-                  ERROR
-                  ================================================= */}
-
-              {error && (
-                <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium leading-6 text-red-600">
-                  {error}
-                </div>
-              )}
-
-              {/* =================================================
-                  FORM
-                  ================================================= */}
-
-              <form
-                onSubmit={handleSubmit}
-                className="space-y-5"
-              >
-
-                {/* EMAIL */}
-
-                <div>
-
-                  <label
-                    htmlFor="email"
-                    className="mb-2 block text-sm font-bold text-slate-700"
-                  >
-                    Email Address
-                  </label>
-
-                  <input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) =>
-                      setEmail(e.target.value)
-                    }
-                    placeholder="you@example.com"
-                    autoComplete="email"
-                    disabled={loading}
-                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-                  />
-
-                </div>
-
-                {/* PASSWORD */}
-
-                <div>
-
-                  <div className="mb-2 flex items-center justify-between">
-
-                    <label
-                      htmlFor="password"
-                      className="block text-sm font-bold text-slate-700"
-                    >
-                      Password
-                    </label>
-
-                    <a
-                      href="/forgot-password"
-                      className="text-xs font-bold text-blue-600 hover:text-blue-700"
-                    >
-                      Forgot Password?
-                    </a>
-
-                  </div>
-
-                  <div className="relative">
-
-                    <input
-                      id="password"
-                      type={
-                        showPassword
-                          ? "text"
-                          : "password"
-                      }
-                      value={password}
-                      onChange={(e) =>
-                        setPassword(e.target.value)
-                      }
-                      placeholder="Enter your password"
-                      autoComplete="current-password"
-                      disabled={loading}
-                      className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 pr-12 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShowPassword(
-                          (prev) => !prev
-                        )
-                      }
-                      disabled={loading}
-                      aria-label={
-                        showPassword
-                          ? "Hide password"
-                          : "Show password"
-                      }
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
-                    >
-                      <EyeIcon
-                        open={showPassword}
-                      />
-                    </button>
-
-                  </div>
-
-                </div>
-
-                {/* REMEMBER ME */}
-
-                <label className="flex cursor-pointer items-center gap-3">
-
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) =>
-                      setRememberMe(
-                        e.target.checked
-                      )
-                    }
-                    disabled={loading}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                  />
-
-                  <span className="text-sm font-medium text-slate-600">
-                    Remember me
-                  </span>
-
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <label className="block text-sm font-medium text-slate-300">
+                  Password
                 </label>
 
-                {/* LOGIN BUTTON */}
-
                 <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-extrabold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+                  type="button"
+                  onClick={() =>
+                    router.push(
+                      "/forgot-password"
+                    )
+                  }
+                  className="text-xs font-medium text-cyan-400 transition hover:text-cyan-300"
                 >
-
-                  {loading ? (
-                    <>
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                      Logging in...
-                    </>
-                  ) : (
-                    <>
-                      Login to Account
-                      <ArrowIcon />
-                    </>
-                  )}
-
+                  Forgot password?
                 </button>
-
-              </form>
-
-              {/* =================================================
-                  SIGNUP
-                  ================================================= */}
-
-              <div className="my-7 flex items-center gap-4">
-
-                <div className="h-px flex-1 bg-slate-200" />
-
-                <span className="text-xs font-semibold text-slate-400">
-                  OR
-                </span>
-
-                <div className="h-px flex-1 bg-slate-200" />
-
               </div>
 
-              <p className="text-center text-sm text-slate-500">
-
-                Don&apos;t have an account?{" "}
-
-                <a
-                  href="/signup"
-                  className="font-extrabold text-blue-600 hover:text-blue-700"
-                >
-                  Create Account
-                </a>
-
-              </p>
-
-              {/* =================================================
-                  SECURITY
-                  ================================================= */}
-
-              <div className="mt-8 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-
-                <div className="mt-0.5 text-blue-600">
-                  <ShieldIcon />
-                </div>
-
-                <div>
-
-                  <p className="text-xs font-extrabold text-slate-700">
-                    Your account is protected
-                  </p>
-
-                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Your login information is securely handled
-                    by Supabase authentication.
-                  </p>
-
-                </div>
-
-              </div>
-
+              <input
+                type="password"
+                value={password}
+                onChange={(e) =>
+                  setPassword(e.target.value)
+                }
+                placeholder="Enter your password"
+                autoComplete="current-password"
+                disabled={loading}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+              />
             </div>
 
+            {/* REMEMBER */}
+
+            <label className="flex cursor-pointer items-center gap-3 text-sm text-slate-400">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) =>
+                  setRemember(e.target.checked)
+                }
+                disabled={loading}
+                className="h-4 w-4 rounded border-slate-700 bg-slate-900 accent-cyan-400"
+              />
+
+              Remember me
+            </label>
+
+            {/* LOGIN BUTTON */}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 px-4 py-3.5 font-bold text-white shadow-lg shadow-blue-500/10 transition hover:from-blue-500 hover:to-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? (
+                <>
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  Login
+                  <ArrowRightIcon />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* DIVIDER */}
+
+          <div className="my-6 flex items-center gap-3">
+            <div className="h-px flex-1 bg-slate-800" />
+
+            <span className="text-xs font-medium text-slate-600">
+              OR
+            </span>
+
+            <div className="h-px flex-1 bg-slate-800" />
           </div>
 
-        </div>
+          {/* SIGNUP */}
 
-      </section>
-
-      {/* =====================================================
-          FOOTER
-          ===================================================== */}
-
-      <footer className="border-t border-slate-200 bg-white">
-
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-5 py-6 text-xs text-slate-400 sm:flex-row sm:px-8">
-
-          <p>
-            © 2026 EarnNova. All rights reserved.
+          <p className="text-center text-sm text-slate-400">
+            Don't have an account?{" "}
+            <button
+              type="button"
+              onClick={() =>
+                router.push("/signup")
+              }
+              className="font-semibold text-cyan-400 transition hover:text-cyan-300"
+            >
+              Create account
+            </button>
           </p>
-
-          <div className="flex gap-5">
-
-            <a
-              href="/privacy"
-              className="hover:text-slate-600"
-            >
-              Privacy
-            </a>
-
-            <a
-              href="/terms"
-              className="hover:text-slate-600"
-            >
-              Terms
-            </a>
-
-          </div>
-
         </div>
 
-      </footer>
+        {/* FOOTER */}
 
+        <p className="mt-6 text-center text-xs text-slate-600">
+          © {new Date().getFullYear()} EarnNova. All rights
+          reserved.
+        </p>
+      </div>
     </main>
   );
 }

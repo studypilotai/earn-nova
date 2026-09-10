@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
 import {
   ArrowRight,
   BriefcaseBusiness,
@@ -21,10 +21,7 @@ import {
   Sparkles,
 } from "lucide-react";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const supabase = createClient();
 
 type Profile = {
   id: string;
@@ -256,6 +253,10 @@ export default function DashboardPage() {
       );
 
       localStorage.removeItem(
+        "earnNovaUserId"
+      );
+
+      localStorage.removeItem(
         "earnNovaSelectedPlan"
       );
 
@@ -282,13 +283,11 @@ export default function DashboardPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#070b10] px-5 text-white">
         <div className="text-center">
-
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-slate-800 border-t-blue-500" />
 
           <p className="text-sm font-semibold text-slate-400">
             Loading EarnNova...
           </p>
-
         </div>
       </main>
     );
@@ -301,9 +300,7 @@ export default function DashboardPage() {
   if (errorMessage || !profile) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#070b10] px-5 text-white">
-
         <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-[#11151b] p-6 shadow-2xl">
-
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 text-red-400">
             <ShieldCheck size={26} />
           </div>
@@ -318,7 +315,6 @@ export default function DashboardPage() {
           </p>
 
           <div className="mt-6 grid grid-cols-2 gap-3">
-
             <button
               onClick={loadProfile}
               className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-500"
@@ -332,7 +328,6 @@ export default function DashboardPage() {
             >
               Logout
             </button>
-
           </div>
         </div>
       </main>
@@ -346,9 +341,7 @@ export default function DashboardPage() {
   if (profile.is_blocked) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#070b10] px-5 text-white">
-
         <div className="w-full max-w-md rounded-3xl border border-red-500/20 bg-[#11151b] p-7 text-center shadow-2xl">
-
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-red-500/10 text-red-400">
             <ShieldCheck size={30} />
           </div>
@@ -365,7 +358,6 @@ export default function DashboardPage() {
 
           {profile.block_reason && (
             <div className="mt-5 rounded-2xl border border-red-500/10 bg-red-500/[0.04] p-4 text-left">
-
               <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-red-400">
                 Reason
               </p>
@@ -373,12 +365,10 @@ export default function DashboardPage() {
               <p className="mt-2 text-sm leading-6 text-slate-300">
                 {profile.block_reason}
               </p>
-
             </div>
           )}
 
           <div className="mt-6 flex gap-3">
-
             <a
               href="/dashboard/support"
               className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-500"
@@ -393,7 +383,6 @@ export default function DashboardPage() {
             >
               <LogOut size={18} />
             </button>
-
           </div>
         </div>
       </main>
@@ -460,9 +449,6 @@ export default function DashboardPage() {
 
   /*
    * PLAN DISPLAY
-   *
-   * This is what will appear inside the
-   * balance card instead of "Active".
    */
 
   const planDisplay =
@@ -527,25 +513,19 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-[#070b10] px-3 py-4 text-white sm:px-5 sm:py-7">
-
       <div className="mx-auto w-full max-w-[570px]">
 
         {/* HEADER */}
 
         <header className="mb-5 flex items-center justify-between">
-
           <div className="flex items-center gap-3">
-
             <div className="relative flex h-12 w-12 items-center justify-center">
-
               <div className="absolute inset-0 rounded-[15px] bg-blue-600/20 blur-md" />
 
               <div className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-[15px] border border-blue-400/20 bg-gradient-to-br from-white via-slate-100 to-blue-50 shadow-xl">
-
                 <div className="absolute -right-3 -top-3 h-7 w-7 rounded-full bg-blue-500/20 blur-md" />
 
                 <div className="relative flex items-center justify-center">
-
                   <span className="text-[21px] font-black italic tracking-[-0.15em] text-slate-950">
                     E
                   </span>
@@ -553,17 +533,13 @@ export default function DashboardPage() {
                   <span className="-ml-0.5 text-[21px] font-black italic tracking-[-0.15em] text-blue-600">
                     N
                   </span>
-
                 </div>
 
                 <div className="absolute bottom-1.5 left-2 h-[2px] w-5 rounded-full bg-blue-500" />
-
               </div>
-
             </div>
 
             <div>
-
               <h1 className="text-[20px] font-black tracking-tight">
                 Earn
                 <span className="text-blue-500">
@@ -574,9 +550,7 @@ export default function DashboardPage() {
               <p className="text-[9px] font-medium uppercase tracking-[0.24em] text-slate-600">
                 Earn • Grow • Repeat
               </p>
-
             </div>
-
           </div>
 
           <button
@@ -586,15 +560,12 @@ export default function DashboardPage() {
           >
             <LogOut size={20} />
           </button>
-
         </header>
 
         {/* WELCOME */}
 
         <section className="mb-4 rounded-2xl border border-blue-500/10 bg-gradient-to-r from-blue-500/[0.06] to-transparent px-4 py-3">
-
           <div className="flex items-center gap-2">
-
             <Sparkles
               size={13}
               className="text-blue-400"
@@ -603,13 +574,11 @@ export default function DashboardPage() {
             <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-400">
               Welcome back
             </p>
-
           </div>
 
           <p className="mt-1 truncate text-sm font-bold text-white">
             {displayName}
           </p>
-
         </section>
 
         {/* PENDING ACTIVATION */}
@@ -617,17 +586,13 @@ export default function DashboardPage() {
         {hasPendingActivation &&
           activationRequest && (
             <section className="mb-4 rounded-2xl border border-amber-500/20 bg-amber-500/[0.05] p-4">
-
               <div className="flex items-center justify-between gap-3">
-
                 <div className="flex items-center gap-3">
-
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400">
                     <ShieldCheck size={20} />
                   </div>
 
                   <div>
-
                     <p className="text-sm font-black text-white">
                       Activation Pending
                     </p>
@@ -636,9 +601,7 @@ export default function DashboardPage() {
                       Your activation payment is
                       waiting for admin approval.
                     </p>
-
                   </div>
-
                 </div>
 
                 <button
@@ -649,9 +612,7 @@ export default function DashboardPage() {
                 >
                   Receipt
                 </button>
-
               </div>
-
             </section>
           )}
 
@@ -660,15 +621,12 @@ export default function DashboardPage() {
         {!hasActivePlan &&
           !hasPendingActivation && (
             <section className="mb-4 rounded-2xl border border-blue-500/20 bg-blue-500/[0.05] p-4">
-
               <div className="flex items-center gap-3">
-
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
                   <Crown size={20} />
                 </div>
 
                 <div className="flex-1">
-
                   <p className="text-sm font-black text-white">
                     Account Not Activated
                   </p>
@@ -677,7 +635,6 @@ export default function DashboardPage() {
                     Choose a membership plan and
                     submit your activation payment.
                   </p>
-
                 </div>
 
                 <a
@@ -686,28 +643,20 @@ export default function DashboardPage() {
                 >
                   Activate
                 </a>
-
               </div>
-
             </section>
           )}
 
-        {/* ================================================= */}
         {/* BALANCE */}
-        {/* ================================================= */}
 
         <section className="rounded-[22px] border border-slate-800 bg-[#11151b] p-5 shadow-2xl sm:p-6">
-
           <div className="flex items-start justify-between gap-4">
-
             <div>
-
               <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
                 Current Balance
               </p>
 
               <div className="mt-1 flex items-center">
-
                 <span className="mr-1 text-xl text-slate-500">
                   $
                 </span>
@@ -715,19 +664,16 @@ export default function DashboardPage() {
                 <span className="text-[40px] font-extrabold tracking-tight">
                   {balance.toFixed(2)}
                 </span>
-
               </div>
 
               <p className="mt-1 text-[10px] text-slate-600">
                 Available for withdrawal
               </p>
-
             </div>
 
-            {/* DEPOSIT + WITHDRAW ONLY HERE */}
+            {/* DEPOSIT + WITHDRAW */}
 
             <div className="flex shrink-0 items-center gap-2">
-
               <a
                 href={depositHref}
                 onClick={(event) =>
@@ -755,9 +701,7 @@ export default function DashboardPage() {
                 <Wallet size={17} />
                 Withdraw
               </a>
-
             </div>
-
           </div>
 
           <div className="my-5 h-px bg-slate-800" />
@@ -767,7 +711,6 @@ export default function DashboardPage() {
             {/* TOTAL EARNED */}
 
             <div>
-
               <p className="text-[9px] uppercase tracking-[0.13em] text-slate-500">
                 Total Earned
               </p>
@@ -775,13 +718,11 @@ export default function DashboardPage() {
               <p className="mt-2 text-lg font-bold">
                 ${totalEarned.toFixed(2)}
               </p>
-
             </div>
 
             {/* PENDING */}
 
             <div className="border-l border-slate-800 pl-4">
-
               <p className="text-[9px] uppercase tracking-[0.13em] text-slate-500">
                 Pending
               </p>
@@ -789,13 +730,11 @@ export default function DashboardPage() {
               <p className="mt-2 text-lg font-bold text-amber-400">
                 ${pendingBalance.toFixed(2)}
               </p>
-
             </div>
 
-            {/* PLAN NAME */}
+            {/* PLAN */}
 
             <div className="flex justify-end">
-
               <div
                 className={`flex max-w-[120px] items-center gap-2 rounded-full px-3 py-1.5 ${
                   hasActivePlan
@@ -805,7 +744,6 @@ export default function DashboardPage() {
                     : "bg-slate-500/10"
                 }`}
               >
-
                 <span
                   className={`h-2 w-2 shrink-0 rounded-full ${
                     hasActivePlan
@@ -828,24 +766,15 @@ export default function DashboardPage() {
                 >
                   {planDisplay}
                 </span>
-
               </div>
-
             </div>
-
           </div>
-
         </section>
 
-        {/* ================================================= */}
         {/* QUICK ACCESS */}
-        {/* DEPOSIT + WITHDRAW REMOVED FROM HERE */}
-        {/* ================================================= */}
 
         <section className="mt-6">
-
           <div className="mb-4">
-
             <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">
               EarnNova
             </p>
@@ -853,7 +782,6 @@ export default function DashboardPage() {
             <h2 className="mt-1 text-lg font-bold">
               Quick Access
             </h2>
-
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -978,19 +906,14 @@ export default function DashboardPage() {
               title="Settings"
               description="Manage preferences"
             />
-
           </div>
-
         </section>
 
         {/* TODAY */}
 
         <section className="mt-5 rounded-[20px] border border-slate-800 bg-[#11151b] p-5">
-
           <div className="flex items-center justify-between">
-
             <div>
-
               <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500">
                 Today's Earnings
               </p>
@@ -1006,36 +929,28 @@ export default function DashboardPage() {
                   ? "Activation is pending approval"
                   : "Activate a plan to start earning"}
               </p>
-
             </div>
 
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-400">
               <CircleDollarSign size={23} />
             </div>
-
           </div>
-
         </section>
 
         {/* SUPPORT */}
 
         <section className="mt-5">
-
           <a
             href="/dashboard/support"
             className="block rounded-2xl border border-slate-800 bg-[#11151b] p-4 transition hover:border-blue-500/30 hover:bg-blue-500/[0.03]"
           >
-
             <div className="flex items-center justify-between">
-
               <div className="flex items-center gap-3">
-
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400">
                   <Headphones size={20} />
                 </div>
 
                 <div>
-
                   <p className="text-sm font-bold">
                     Support
                   </p>
@@ -1043,26 +958,20 @@ export default function DashboardPage() {
                   <p className="mt-1 text-[10px] text-slate-500">
                     Need help? Create a support ticket
                   </p>
-
                 </div>
-
               </div>
 
               <ArrowRight
                 size={17}
                 className="text-slate-700"
               />
-
             </div>
-
           </a>
-
         </section>
 
         {/* FOOTER */}
 
         <footer className="py-7 text-center">
-
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-700">
             EarnNova
           </p>
@@ -1070,9 +979,7 @@ export default function DashboardPage() {
           <p className="mt-2 text-[10px] text-slate-700">
             Earn • Grow • Repeat
           </p>
-
         </footer>
-
       </div>
 
       {/* MOBILE MENU BUTTON */}
@@ -1203,7 +1110,6 @@ export default function DashboardPage() {
             <LogOut size={17} />
             Logout
           </button>
-
         </div>
       )}
 
@@ -1217,26 +1123,20 @@ export default function DashboardPage() {
               setShowPending(false)
             }
           >
-
             <div
               className="w-full max-w-md overflow-hidden rounded-3xl border border-slate-800 bg-[#11151b] shadow-2xl"
               onClick={(event) =>
                 event.stopPropagation()
               }
             >
-
               <div className="border-b border-slate-800 p-5">
-
                 <div className="flex items-center justify-between">
-
                   <div className="flex items-center gap-3">
-
                     <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400">
                       <ShieldCheck size={21} />
                     </div>
 
                     <div>
-
                       <h2 className="text-lg font-black">
                         Activation Pending
                       </h2>
@@ -1244,9 +1144,7 @@ export default function DashboardPage() {
                       <p className="text-[10px] text-slate-500">
                         Payment submitted successfully
                       </p>
-
                     </div>
-
                   </div>
 
                   <button
@@ -1257,19 +1155,13 @@ export default function DashboardPage() {
                   >
                     <X size={18} />
                   </button>
-
                 </div>
-
               </div>
 
               <div className="p-5">
-
                 <div className="rounded-2xl border border-slate-800 bg-[#0b0f14] p-4">
-
                   <div className="mb-4 flex items-center justify-between">
-
                     <div>
-
                       <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600">
                         Payment Receipt
                       </p>
@@ -1277,17 +1169,14 @@ export default function DashboardPage() {
                       <p className="mt-1 text-sm font-black text-white">
                         Account Activation
                       </p>
-
                     </div>
 
                     <span className="rounded-full bg-amber-500/10 px-3 py-1.5 text-[9px] font-black uppercase text-amber-400">
                       Pending
                     </span>
-
                   </div>
 
                   <div className="space-y-3">
-
                     <ReceiptRow
                       label="Amount"
                       value={`$${Number(
@@ -1327,21 +1216,16 @@ export default function DashboardPage() {
                         ).toLocaleString()}
                       />
                     )}
-
                   </div>
-
                 </div>
 
                 <div className="mt-4 rounded-2xl border border-amber-500/10 bg-amber-500/[0.04] p-4">
-
                   <div className="flex items-center gap-2">
-
                     <div className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
 
                     <p className="text-xs font-bold text-amber-400">
                       Waiting for approval
                     </p>
-
                   </div>
 
                   <p className="mt-2 text-[10px] leading-5 text-slate-500">
@@ -1350,7 +1234,6 @@ export default function DashboardPage() {
                     the EarnNova admin team. Earning
                     features will unlock after approval.
                   </p>
-
                 </div>
 
                 <button
@@ -1361,14 +1244,10 @@ export default function DashboardPage() {
                 >
                   Close
                 </button>
-
               </div>
-
             </div>
-
           </div>
         )}
-
     </main>
   );
 }
@@ -1406,9 +1285,7 @@ function DashboardAction({
       }}
       className="group rounded-2xl border border-slate-800 bg-[#11151b] p-4 transition hover:border-blue-500/30 hover:bg-blue-500/[0.03]"
     >
-
       <div className="flex items-start justify-between">
-
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
           {icon}
         </div>
@@ -1417,7 +1294,6 @@ function DashboardAction({
           size={15}
           className="text-slate-700 transition group-hover:text-blue-400"
         />
-
       </div>
 
       <h3 className="mt-4 text-sm font-bold">
@@ -1427,7 +1303,6 @@ function DashboardAction({
       <p className="mt-1 text-[10px] leading-4 text-slate-500">
         {description}
       </p>
-
     </a>
   );
 }
@@ -1482,7 +1357,6 @@ function ReceiptRow({
 }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-slate-800/70 pb-3 last:border-0 last:pb-0">
-
       <span className="text-[10px] text-slate-600">
         {label}
       </span>
@@ -1490,7 +1364,6 @@ function ReceiptRow({
       <span className="max-w-[60%] break-words text-right text-[11px] font-bold text-slate-300">
         {value}
       </span>
-
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
 import {
   ArrowLeft,
   Copy,
@@ -16,18 +16,12 @@ import {
   RefreshCw,
 } from "lucide-react";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-const REFERRAL_REWARD = 1;
+const supabase = createClient();
 
 type Profile = {
   id: string;
   full_name: string | null;
   email: string | null;
-  referral_code: string | null;
 };
 
 type ReferralUser = {
@@ -36,10 +30,13 @@ type ReferralUser = {
   email: string | null;
   wallet: number;
   membership: string | null;
+  activated: boolean;
 };
 
 export default function ReferralPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [referralCode, setReferralCode] = useState("");
+
   const [referrals, setReferrals] = useState<ReferralUser[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -60,6 +57,12 @@ export default function ReferralPage() {
         setLoading(true);
       }
 
+      /*
+       * =====================================================
+       * AUTH
+       * =====================================================
+       */
+
       const {
         data: { user },
         error: authError,
@@ -78,33 +81,36 @@ export default function ReferralPage() {
 
       /*
        * =====================================================
-       * LOAD CURRENT USER PROFILE
+       * CURRENT PROFILE
        * =====================================================
        */
 
-      const { data: profileData, error: profileError } =
-        await supabase
-          .from("profiles")
-          .select(
-            `
-              id,
-              full_name,
-              email,
-              referral_code
-            `
-          )
-          .eq("id", user.id)
-          .maybeSingle();
+      const {
+        data: profileData,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select(
+          `
+            id,
+            full_name,
+            email
+          `
+        )
+        .eq("id", user.id)
+        .maybeSingle();
 
       if (profileError) {
         console.error("PROFILE ERROR:", profileError);
-        setErrorMessage("Unable to load your referral information.");
+        setErrorMessage(
+          "Unable to load your referral information."
+        );
         return;
       }
 
       if (!profileData) {
         setErrorMessage(
-          "Your profile could not be found. Please contact support."
+          "Your profile could not be found. Please contact EarnNova Team."
         );
         return;
       }
@@ -113,15 +119,43 @@ export default function ReferralPage() {
         id: profileData.id,
         full_name: profileData.full_name ?? null,
         email: profileData.email ?? null,
-        referral_code: profileData.referral_code ?? null,
       });
+
+      /*
+       * =====================================================
+       * PERSONAL REFERRAL CODE
+       *
+       * Personal code is taken from referral_codes.created_by
+       * instead of depending on profiles.referral_code.
+       * =====================================================
+       */
+
+      const {
+        data: codeData,
+        error: codeError,
+      } = await supabase
+        .from("referral_codes")
+        .select("code")
+        .eq("created_by", user.id)
+        .eq("is_active", true)
+        .order("created_at", {
+          ascending: false,
+        })
+        .limit(1);
+
+      if (codeError) {
+        console.error("REFERRAL CODE ERROR:", codeError);
+        setReferralCode("");
+      } else {
+        setReferralCode(codeData?.[0]?.code ?? "");
+      }
 
       /*
        * =====================================================
        * LOAD REFERRALS
        *
-       * Only users whose referred_by_uid is exactly the
-       * current user's ID are considered referrals.
+       * Only users whose referred_by_uid matches the
+       * currently logged-in user's ID are referrals.
        * =====================================================
        */
 
@@ -147,26 +181,69 @@ export default function ReferralPage() {
       if (referralError) {
         console.error("REFERRAL ERROR:", referralError);
 
-        /*
-         * Do NOT destroy the whole page if the referral
-         * relationship query fails.
-         */
         setReferrals([]);
       } else {
-        const cleanReferrals: ReferralUser[] = (
-          referralData || []
-        ).map((item) => ({
-          id: item.id,
-          full_name: item.full_name ?? null,
-          email: item.email ?? null,
-          wallet: Number(item.wallet ?? 0),
-          membership: item.membership ?? null,
-        }));
+        const rawReferrals = (referralData || []).map(
+          (item) => ({
+            id: item.id,
+            full_name: item.full_name ?? null,
+            email: item.email ?? null,
+            wallet: Number(item.wallet ?? 0),
+            membership: item.membership ?? null,
+            activated: false,
+          })
+        );
+
+        /*
+         * ===================================================
+         * APPROVED ACTIVATIONS
+         *
+         * Membership alone is NOT trusted as activation
+         * proof. We check the activations table.
+         * ===================================================
+         */
+
+        const referralIds = rawReferrals.map(
+          (item) => item.id
+        );
+
+        let activatedIds = new Set<string>();
+
+        if (referralIds.length > 0) {
+          const {
+            data: activationData,
+            error: activationError,
+          } = await supabase
+            .from("activations")
+            .select("user_id")
+            .in("user_id", referralIds)
+            .eq("status", "approved");
+
+          if (activationError) {
+            console.error(
+              "ACTIVATION CHECK ERROR:",
+              activationError
+            );
+          } else {
+            activatedIds = new Set(
+              (activationData || []).map(
+                (item) => item.user_id
+              )
+            );
+          }
+        }
+
+        const cleanReferrals: ReferralUser[] =
+          rawReferrals.map((item) => ({
+            ...item,
+            activated: activatedIds.has(item.id),
+          }));
 
         setReferrals(cleanReferrals);
       }
     } catch (error) {
       console.error("REFERRAL PAGE ERROR:", error);
+
       setErrorMessage(
         "Something went wrong while loading referrals."
       );
@@ -190,15 +267,15 @@ export default function ReferralPage() {
   const referralLink = useMemo(() => {
     if (
       typeof window === "undefined" ||
-      !profile?.referral_code
+      !referralCode
     ) {
       return "";
     }
 
     return `${window.location.origin}/signup?ref=${encodeURIComponent(
-      profile.referral_code
+      referralCode
     )}`;
-  }, [profile?.referral_code]);
+  }, [referralCode]);
 
   /*
    * =====================================================
@@ -206,7 +283,10 @@ export default function ReferralPage() {
    * =====================================================
    */
 
-  async function copyText(text: string, type: string) {
+  async function copyText(
+    text: string,
+    type: string
+  ) {
     if (!text) return;
 
     try {
@@ -251,51 +331,31 @@ export default function ReferralPage() {
 
   /*
    * =====================================================
-   * ACTIVATION STATUS
-   *
-   * A referral is activated only when membership is a
-   * real paid plan.
+   * STATISTICS
    * =====================================================
    */
 
-  function isActivated(membership: string | null) {
-    if (!membership) return false;
-
-    const value = membership.trim().toLowerCase();
-
-    const inactiveValues = [
-      "",
-      "free",
-      "none",
-      "no plan",
-      "inactive",
-      "pending",
-    ];
-
-    return !inactiveValues.includes(value);
-  }
-
-  const activatedCount = referrals.filter((user) =>
-    isActivated(user.membership)
+  const activatedCount = referrals.filter(
+    (user) => user.activated
   ).length;
 
   const pendingCount =
     referrals.length - activatedCount;
 
   /*
-   * =====================================================
-   * DISPLAY REWARD
+   * IMPORTANT:
    *
-   * Actual wallet credit MUST be handled server-side.
+   * Referral reward is NOT calculated in the browser.
+   * Actual wallet credit must be handled securely by
+   * Supabase RPC / server-side logic after activation.
+   *
+   * We therefore do NOT show a fake calculated earning.
    * =====================================================
    */
 
-  const referralEarnings =
-    activatedCount * REFERRAL_REWARD;
-
   /*
    * =====================================================
-   * INITIAL LOADING
+   * LOADING
    * =====================================================
    */
 
@@ -307,24 +367,20 @@ export default function ReferralPage() {
             <a
               href="/dashboard"
               aria-label="Back to Dashboard"
-              className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-800 bg-[#11151b] text-slate-400 transition hover:border-blue-500/40 hover:text-white"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-[#11151b] text-slate-400 transition hover:border-blue-500/40 hover:text-white"
             >
               <ArrowLeft size={20} />
             </a>
 
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-lg">
-              <span className="text-lg font-black italic text-slate-950">
-                E<span className="text-blue-600">N</span>
-              </span>
-            </div>
+            <LogoMark />
 
             <div>
-              <h1 className="text-lg font-extrabold">
+              <h1 className="text-[20px] font-black tracking-tight">
                 Earn<span className="text-blue-500">Nova</span>
               </h1>
 
-              <p className="text-[9px] uppercase tracking-[0.18em] text-slate-600">
-                Referral Program
+              <p className="text-[9px] font-medium uppercase tracking-[0.24em] text-slate-600">
+                Earn • Grow • Repeat
               </p>
             </div>
           </div>
@@ -346,7 +402,7 @@ export default function ReferralPage() {
 
   /*
    * =====================================================
-   * ERROR STATE
+   * ERROR
    * =====================================================
    */
 
@@ -358,15 +414,21 @@ export default function ReferralPage() {
             <a
               href="/dashboard"
               aria-label="Back to Dashboard"
-              className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-800 bg-[#11151b] text-slate-400 transition hover:border-blue-500/40 hover:text-white"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-[#11151b] text-slate-400 transition hover:border-blue-500/40 hover:text-white"
             >
               <ArrowLeft size={20} />
             </a>
 
+            <LogoMark />
+
             <div>
-              <h1 className="text-lg font-extrabold">
+              <h1 className="text-[20px] font-black tracking-tight">
                 Earn<span className="text-blue-500">Nova</span>
               </h1>
+
+              <p className="text-[9px] font-medium uppercase tracking-[0.24em] text-slate-600">
+                Earn • Grow • Repeat
+              </p>
             </div>
           </header>
 
@@ -388,6 +450,12 @@ export default function ReferralPage() {
     );
   }
 
+  /*
+   * =====================================================
+   * MAIN PAGE
+   * =====================================================
+   */
+
   return (
     <main className="min-h-screen bg-[#070b10] px-3 py-4 text-white sm:px-5 sm:py-7">
       <div className="mx-auto w-full max-w-[570px]">
@@ -405,19 +473,15 @@ export default function ReferralPage() {
             <ArrowLeft size={20} />
           </a>
 
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-lg">
-            <span className="text-lg font-black italic text-slate-950">
-              E<span className="text-blue-600">N</span>
-            </span>
-          </div>
+          <LogoMark />
 
           <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-extrabold">
+            <h1 className="text-[20px] font-black tracking-tight">
               Earn<span className="text-blue-500">Nova</span>
             </h1>
 
-            <p className="text-[9px] uppercase tracking-[0.18em] text-slate-600">
-              Referral Program
+            <p className="text-[9px] font-medium uppercase tracking-[0.24em] text-slate-600">
+              Earn • Grow • Repeat
             </p>
           </div>
 
@@ -430,7 +494,9 @@ export default function ReferralPage() {
             <RefreshCw
               size={17}
               className={
-                refreshing ? "animate-spin" : ""
+                refreshing
+                  ? "animate-spin"
+                  : ""
               }
             />
           </button>
@@ -458,7 +524,8 @@ export default function ReferralPage() {
               <p className="mt-2 text-xs leading-5 text-slate-500">
                 Invite friends to EarnNova using your
                 personal referral link. Referral rewards
-                are counted after activation.
+                are processed after the referred account
+                becomes activated.
               </p>
             </div>
           </div>
@@ -482,18 +549,18 @@ export default function ReferralPage() {
           <div className="mt-2 flex items-center gap-2">
             <div className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3">
               <p className="truncate text-sm font-black tracking-widest text-white">
-                {profile?.referral_code || "Not Available"}
+                {referralCode || "Not Available"}
               </p>
             </div>
 
             <button
               onClick={() =>
                 copyText(
-                  profile?.referral_code || "",
+                  referralCode,
                   "code"
                 )
               }
-              disabled={!profile?.referral_code}
+              disabled={!referralCode}
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Copy referral code"
             >
@@ -524,13 +591,17 @@ export default function ReferralPage() {
           <div className="mt-2 flex items-center gap-2">
             <div className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3">
               <p className="truncate text-xs text-slate-400">
-                {referralLink || "Referral link unavailable"}
+                {referralLink ||
+                  "Referral link unavailable"}
               </p>
             </div>
 
             <button
               onClick={() =>
-                copyText(referralLink, "link")
+                copyText(
+                  referralLink,
+                  "link"
+                )
               }
               disabled={!referralLink}
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
@@ -623,7 +694,7 @@ export default function ReferralPage() {
               </p>
 
               <p className="mt-1 text-[9px] text-slate-600">
-                Activated accounts
+                Approved accounts
               </p>
             </div>
 
@@ -658,16 +729,16 @@ export default function ReferralPage() {
                 </div>
 
                 <p className="text-[9px] font-bold uppercase tracking-wider text-slate-600">
-                  Earnings
+                  Rewards
                 </p>
               </div>
 
-              <p className="mt-3 text-2xl font-black text-purple-400">
-                ${referralEarnings.toFixed(2)}
+              <p className="mt-3 text-lg font-black text-purple-400">
+                Server Processed
               </p>
 
               <p className="mt-1 text-[9px] text-slate-600">
-                Activated referrals
+                Rewards are credited securely
               </p>
             </div>
           </div>
@@ -685,7 +756,9 @@ export default function ReferralPage() {
 
             <span className="text-[9px] text-slate-600">
               {referrals.length}{" "}
-              {referrals.length === 1 ? "user" : "users"}
+              {referrals.length === 1
+                ? "user"
+                : "users"}
             </span>
           </div>
 
@@ -704,7 +777,7 @@ export default function ReferralPage() {
                 friends to join EarnNova.
               </p>
 
-              {profile?.referral_code && (
+              {referralCode && (
                 <button
                   onClick={shareReferral}
                   className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-blue-500"
@@ -716,66 +789,62 @@ export default function ReferralPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {referrals.map((referral) => {
-                const activated = isActivated(
-                  referral.membership
-                );
+              {referrals.map((referral) => (
+                <div
+                  key={referral.id}
+                  className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-[#11151b] p-3.5"
+                >
+                  {/* AVATAR */}
 
-                return (
-                  <div
-                    key={referral.id}
-                    className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-[#11151b] p-3.5"
-                  >
-                    {/* AVATAR */}
-
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-sm font-black text-blue-400">
-                      {referral.full_name
-                        ?.charAt(0)
-                        .toUpperCase() || "U"}
-                    </div>
-
-                    {/* USER */}
-
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold">
-                        {referral.full_name || "User"}
-                      </p>
-
-                      <p className="mt-0.5 truncate text-[9px] text-slate-600">
-                        {referral.email || "Email unavailable"}
-                      </p>
-                    </div>
-
-                    {/* STATUS */}
-
-                    <div className="shrink-0 text-right">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-1 text-[8px] font-bold ${
-                          activated
-                            ? "bg-green-500/10 text-green-400"
-                            : "bg-amber-500/10 text-amber-400"
-                        }`}
-                      >
-                        {activated
-                          ? "Activated"
-                          : "Pending"}
-                      </span>
-
-                      <p
-                        className={`mt-1 text-xs font-black ${
-                          activated
-                            ? "text-green-400"
-                            : "text-slate-600"
-                        }`}
-                      >
-                        {activated
-                          ? `+$${REFERRAL_REWARD.toFixed(2)}`
-                          : "$0.00"}
-                      </p>
-                    </div>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-sm font-black text-blue-400">
+                    {referral.full_name
+                      ?.charAt(0)
+                      .toUpperCase() || "U"}
                   </div>
-                );
-              })}
+
+                  {/* USER */}
+
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold">
+                      {referral.full_name ||
+                        "User"}
+                    </p>
+
+                    <p className="mt-0.5 truncate text-[9px] text-slate-600">
+                      {referral.email ||
+                        "Email unavailable"}
+                    </p>
+                  </div>
+
+                  {/* STATUS */}
+
+                  <div className="shrink-0 text-right">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-1 text-[8px] font-bold ${
+                        referral.activated
+                          ? "bg-green-500/10 text-green-400"
+                          : "bg-amber-500/10 text-amber-400"
+                      }`}
+                    >
+                      {referral.activated
+                        ? "Activated"
+                        : "Pending"}
+                    </span>
+
+                    <p
+                      className={`mt-1 text-[9px] font-semibold ${
+                        referral.activated
+                          ? "text-green-400"
+                          : "text-slate-600"
+                      }`}
+                    >
+                      {referral.activated
+                        ? "Reward eligible"
+                        : "No reward yet"}
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </section>
@@ -797,10 +866,12 @@ export default function ReferralPage() {
               </p>
 
               <p className="mt-2 text-xs leading-5 text-slate-500">
-                A referral is counted as activated only
-                after the referred account has an active
-                EarnNova membership. Signup alone does
-                not generate a referral reward.
+                Signup alone does not generate a
+                referral reward. A referral becomes
+                eligible only after the referred account
+                receives an approved activation. Actual
+                wallet credit is processed securely by
+                EarnNova server-side logic.
               </p>
             </div>
           </div>
@@ -821,5 +892,36 @@ export default function ReferralPage() {
         </footer>
       </div>
     </main>
+  );
+}
+
+/*
+ * =========================================================
+ * EARNNOVA MASTER LOGO
+ * Same visual logo used by the customer dashboard.
+ * =========================================================
+ */
+
+function LogoMark() {
+  return (
+    <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
+      <div className="absolute inset-0 rounded-[15px] bg-blue-600/20 blur-md" />
+
+      <div className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-[15px] border border-blue-400/20 bg-gradient-to-br from-white via-slate-100 to-blue-50 shadow-xl">
+        <div className="absolute -right-3 -top-3 h-7 w-7 rounded-full bg-blue-500/20 blur-md" />
+
+        <div className="relative flex items-center justify-center">
+          <span className="text-[21px] font-black italic tracking-[-0.15em] text-slate-950">
+            E
+          </span>
+
+          <span className="-ml-0.5 text-[21px] font-black italic tracking-[-0.15em] text-blue-600">
+            N
+          </span>
+        </div>
+
+        <div className="absolute bottom-1.5 left-2 h-[2px] w-5 rounded-full bg-blue-500" />
+      </div>
+    </div>
   );
 }

@@ -2,32 +2,25 @@
 
 import {
   FormEvent,
-  Suspense,
   useState,
 } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
-import {
-  ShieldCheck,
-  Mail,
-  Lock,
-  ArrowRight,
-  Loader2,
-} from "lucide-react";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { createClient } from "@/lib/supabase/client";
 
-function AdminLoginForm() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+const supabase = createClient();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+export default function AdminLoginPage() {
+  const [email, setEmail] =
+    useState("");
+
+  const [password, setPassword] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
 
   async function handleLogin(
     e: FormEvent<HTMLFormElement>
@@ -36,28 +29,38 @@ function AdminLoginForm() {
 
     if (loading) return;
 
-    setLoading(true);
     setError("");
+    setLoading(true);
 
     try {
-      const cleanEmail = email.trim();
+      const cleanEmail =
+        email.trim().toLowerCase();
 
-      if (!cleanEmail || !password) {
+      if (
+        !cleanEmail ||
+        !password
+      ) {
         setError(
-          "Email aur password dono enter karo."
+          "Please enter email and password."
         );
         setLoading(false);
         return;
       }
 
-      // Supabase login
+      /* ==================================================
+         SIGN IN
+      ================================================== */
+
       const {
         data,
         error: loginError,
-      } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password,
-      });
+      } =
+        await supabase.auth.signInWithPassword(
+          {
+            email: cleanEmail,
+            password,
+          }
+        );
 
       if (loginError) {
         console.error(
@@ -65,50 +68,51 @@ function AdminLoginForm() {
           loginError
         );
 
-        setError(loginError.message);
+        setError(
+          loginError.message
+        );
+
         setLoading(false);
         return;
       }
 
       if (!data.user) {
         setError(
-          "Login nahi hua. Dobara try karo."
+          "Login failed. User account was not returned."
         );
+
         setLoading(false);
         return;
       }
 
-      console.log(
-        "ADMIN AUTH USER:",
-        data.user.id
-      );
+      /* ==================================================
+         VERIFY PROFILE
+      ================================================== */
 
-      // Existing admin profile check
       const {
         data: profile,
         error: profileError,
       } = await supabase
         .from("profiles")
-        .select("id, role, email")
-        .eq("id", data.user.id)
+        .select(
+          "id, role, email, full_name"
+        )
+        .eq(
+          "id",
+          data.user.id
+        )
         .maybeSingle();
 
-      console.log(
-        "ADMIN PROFILE:",
-        profile
-      );
-
-      console.log(
-        "PROFILE ERROR:",
-        profileError
-      );
-
       if (profileError) {
+        console.error(
+          "ADMIN PROFILE ERROR:",
+          profileError
+        );
+
         await supabase.auth.signOut();
 
         setError(
-          "Admin profile verify nahi ho saka: " +
-            profileError.message
+          `Could not verify admin account: ${profileError.message}`
         );
 
         setLoading(false);
@@ -119,41 +123,81 @@ function AdminLoginForm() {
         await supabase.auth.signOut();
 
         setError(
-          "Is account ki profiles table mein entry nahi mili."
+          "Admin profile was not found."
         );
 
         setLoading(false);
         return;
       }
 
-      if (profile.role !== "admin") {
+      /* ==================================================
+         ADMIN ROLE CHECK
+      ================================================== */
+
+      if (
+        profile.role !==
+        "admin"
+      ) {
         await supabase.auth.signOut();
 
         setError(
-          "Yeh account admin account nahi hai."
+          "This account does not have admin access."
         );
 
         setLoading(false);
         return;
       }
 
-      // Login successful
-      const redirect =
-        searchParams.get("redirect") ||
-        "/admin";
+      /* ==================================================
+         LOCAL STORAGE
+         UI ONLY — NOT AUTHORITY
+      ================================================== */
 
-      router.replace(redirect);
-      router.refresh();
+      try {
+        localStorage.setItem(
+          "earnNovaLoggedIn",
+          "true"
+        );
+
+        localStorage.setItem(
+          "earnNovaUserId",
+          data.user.id
+        );
+
+        localStorage.setItem(
+          "earnNovaUserEmail",
+          cleanEmail
+        );
+
+        if (
+          profile.full_name
+        ) {
+          localStorage.setItem(
+            "earnNovaUserName",
+            profile.full_name
+          );
+        }
+      } catch {
+        // Ignore localStorage errors.
+      }
+
+      /* ==================================================
+         ADMIN REDIRECT
+      ================================================== */
+
+      window.location.assign(
+        "/admin"
+      );
     } catch (err) {
       console.error(
-        "ADMIN LOGIN EXCEPTION:",
+        "ADMIN LOGIN UNEXPECTED ERROR:",
         err
       );
 
       setError(
         err instanceof Error
           ? err.message
-          : "Login ke waqt unexpected error aaya."
+          : "Something went wrong. Please try again."
       );
 
       setLoading(false);
@@ -161,153 +205,189 @@ function AdminLoginForm() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#020617] px-4 py-10 text-white">
+    <main className="flex min-h-screen items-center justify-center bg-[#070b10] px-4 py-10 text-white">
       <div className="w-full max-w-md">
 
+        {/* =================================================
+            BRAND
+        ================================================= */}
+
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 shadow-lg shadow-blue-600/20">
-            <ShieldCheck size={30} />
+
+          <div className="mb-5 flex items-center justify-center gap-3">
+
+            {/* EarnNova logo */}
+
+            <div className="relative flex h-12 w-12 items-center justify-center">
+              <div className="absolute inset-0 rounded-[15px] bg-blue-600/20 blur-md" />
+
+              <div className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-[15px] border border-blue-400/20 bg-gradient-to-br from-white via-slate-100 to-blue-50 shadow-xl">
+
+                <div className="absolute -right-3 -top-3 h-7 w-7 rounded-full bg-blue-500/20 blur-md" />
+
+                <div className="relative flex items-center justify-center">
+
+                  <span className="text-[21px] font-black italic tracking-[-0.15em] text-slate-950">
+                    E
+                  </span>
+
+                  <span className="-ml-0.5 text-[21px] font-black italic tracking-[-0.15em] text-blue-600">
+                    N
+                  </span>
+
+                </div>
+
+                <div className="absolute bottom-1.5 left-2 h-[2px] w-5 rounded-full bg-blue-500" />
+
+              </div>
+            </div>
+
+            <div className="text-left">
+
+              <h1 className="text-[20px] font-black tracking-tight">
+                Earn
+                <span className="text-blue-500">
+                  Nova
+                </span>
+              </h1>
+
+              <p className="text-[9px] font-medium uppercase tracking-[0.24em] text-slate-600">
+                Earn • Grow • Repeat
+              </p>
+
+            </div>
+
           </div>
 
-          <h1 className="text-4xl font-bold">
-            Earn
-            <span className="text-blue-500">
-              Nova
-            </span>
-          </h1>
+          <h2 className="text-3xl font-black tracking-tight">
+            Admin Panel
+          </h2>
 
-          <p className="mt-2 text-slate-400">
-            Admin Control Panel
+          <p className="mt-2 text-sm text-slate-500">
+            Secure EarnNova Team login
           </p>
+
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-8 shadow-2xl">
+        {/* =================================================
+            CARD
+        ================================================= */}
 
-          <div className="mb-7">
-            <h2 className="text-2xl font-bold">
-              Admin Login
-            </h2>
+        <div className="rounded-3xl border border-slate-800 bg-[#11151b] p-6 shadow-2xl">
 
-            <p className="mt-2 text-sm text-slate-400">
-              Sign in to manage your EarnNova
-              platform.
-            </p>
-          </div>
+          {/* ERROR */}
+
+          {error && (
+            <div className="mb-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold leading-6 text-red-300">
+              {error}
+            </div>
+          )}
+
+          {/* FORM */}
 
           <form
-            onSubmit={handleLogin}
+            onSubmit={
+              handleLogin
+            }
             className="space-y-5"
           >
 
+            {/* EMAIL */}
+
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">
-                Email
+
+              <label
+                htmlFor="admin-email"
+                className="mb-2 block text-sm font-semibold text-slate-300"
+              >
+                Admin Email
               </label>
 
-              <div className="relative">
-                <Mail
-                  size={20}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"
-                />
+              <input
+                id="admin-email"
+                type="email"
+                value={email}
+                onChange={(e) =>
+                  setEmail(
+                    e.target.value
+                  )
+                }
+                placeholder="admin@example.com"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                disabled={loading}
+                required
+                className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+              />
 
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) =>
-                    setEmail(e.target.value)
-                  }
-                  placeholder="admin@example.com"
-                  autoComplete="email"
-                  disabled={loading}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 py-4 pl-12 pr-4 text-white outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
-                />
-              </div>
             </div>
 
+            {/* PASSWORD */}
+
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">
+
+              <label
+                htmlFor="admin-password"
+                className="mb-2 block text-sm font-semibold text-slate-300"
+              >
                 Password
               </label>
 
-              <div className="relative">
-                <Lock
-                  size={20}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"
-                />
+              <input
+                id="admin-password"
+                type="password"
+                value={password}
+                onChange={(e) =>
+                  setPassword(
+                    e.target.value
+                  )
+                }
+                placeholder="Enter admin password"
+                autoComplete="current-password"
+                disabled={loading}
+                required
+                className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+              />
 
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) =>
-                    setPassword(e.target.value)
-                  }
-                  placeholder="Enter your password"
-                  autoComplete="current-password"
-                  disabled={loading}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 py-4 pl-12 pr-4 text-white outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
-                />
-              </div>
             </div>
 
-            {error && (
-              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-                {error}
-              </div>
-            )}
+            {/* LOGIN BUTTON */}
 
             <button
               type="submit"
               disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-xl bg-blue-600 px-4 py-3.5 text-sm font-black text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading ? (
-                <>
-                  <Loader2
-                    size={20}
-                    className="animate-spin"
-                  />
-                  Signing in...
-                </>
-              ) : (
-                <>
-                  Sign in
-                  <ArrowRight size={20} />
-                </>
-              )}
+              {loading
+                ? "Signing in..."
+                : "Admin Login"}
             </button>
 
           </form>
+
+          {/* CUSTOMER LOGIN */}
+
+          <div className="mt-6 border-t border-slate-800 pt-5 text-center">
+
+            <a
+              href="/login"
+              className="text-sm font-semibold text-slate-500 transition hover:text-blue-400"
+            >
+              ← Customer Login
+            </a>
+
+          </div>
+
         </div>
 
-        <p className="mt-6 text-center text-sm text-slate-600">
-          EarnNova Admin • Secure Access
+        {/* FOOTER */}
+
+        <p className="mt-6 text-center text-[11px] text-slate-700">
+          EarnNova Team Administration
         </p>
 
       </div>
     </main>
-  );
-}
-
-function AdminLoginFallback() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-[#020617] px-4 py-10 text-white">
-      <div className="text-center">
-        <Loader2
-          size={28}
-          className="mx-auto animate-spin text-blue-500"
-        />
-        <p className="mt-3 text-sm text-slate-400">
-          Loading admin login...
-        </p>
-      </div>
-    </main>
-  );
-}
-
-export default function AdminLoginPage() {
-  return (
-    <Suspense fallback={<AdminLoginFallback />}>
-      <AdminLoginForm />
-    </Suspense>
   );
 }

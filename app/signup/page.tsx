@@ -5,7 +5,9 @@ import {
   useEffect,
   useState,
 } from "react";
+
 import { createClient } from "@supabase/supabase-js";
+
 import {
   ArrowRight,
   Check,
@@ -25,7 +27,8 @@ const supabase = createClient(
 );
 
 /* =========================================================
-   LOGO
+   EARNNOVA LOGO
+   SAME MASTER LOGO AS CUSTOMER DASHBOARD
 ========================================================= */
 
 function LogoMark() {
@@ -66,16 +69,12 @@ function PasswordRule({
   return (
     <div
       className={`flex items-center gap-1.5 text-[11px] font-medium ${
-        valid
-          ? "text-emerald-600"
-          : "text-slate-400"
+        valid ? "text-emerald-600" : "text-slate-400"
       }`}
     >
       <span
         className={`flex h-4 w-4 items-center justify-center rounded-full ${
-          valid
-            ? "bg-emerald-100"
-            : "bg-slate-100"
+          valid ? "bg-emerald-100" : "bg-slate-100"
         }`}
       >
         <Check size={11} strokeWidth={3} />
@@ -91,16 +90,11 @@ function PasswordRule({
 ========================================================= */
 
 export default function SignupPage() {
-  const [showPassword, setShowPassword] =
-    useState(false);
-
-  const [showConfirm, setShowConfirm] =
-    useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const [loading, setLoading] = useState(false);
-
-  const [referralChecking, setReferralChecking] =
-    useState(false);
+  const [referralChecking, setReferralChecking] = useState(false);
 
   const [referralValid, setReferralValid] =
     useState<boolean | null>(null);
@@ -113,7 +107,7 @@ export default function SignupPage() {
     email: "",
     password: "",
     confirmPassword: "",
-    referralCode: "",
+    referralCode: "EARNNOVA",
     agree: false,
     website: "",
   });
@@ -148,6 +142,7 @@ export default function SignupPage() {
     }));
 
     setReferralFromLink(true);
+    setReferralValid(null);
   }, []);
 
   /* =========================================================
@@ -205,15 +200,16 @@ export default function SignupPage() {
       .trim()
       .toUpperCase();
 
-    /* Optional referral */
     if (!code) {
-      setReferralValid(null);
+      setReferralValid(false);
 
       if (showError) {
-        setError("");
+        setError(
+          "Referral code is required."
+        );
       }
 
-      return true;
+      return false;
     }
 
     if (
@@ -234,20 +230,19 @@ export default function SignupPage() {
 
     try {
       /*
+       * Referral codes are stored in referral_codes.
+       *
        * IMPORTANT:
-       * Referral code is checked against profiles,
-       * because profiles.referral_code is the actual
-       * personal referral code.
+       * This check only verifies the code.
+       * It does NOT add any reward.
        */
 
       const { data, error } =
         await supabase
-          .from("profiles")
-          .select("id, referral_code")
-          .eq(
-            "referral_code",
-            code
-          )
+          .from("referral_codes")
+          .select("code,is_active")
+          .eq("code", code)
+          .eq("is_active", true)
           .maybeSingle();
 
       if (error) {
@@ -272,7 +267,7 @@ export default function SignupPage() {
 
         if (showError) {
           setError(
-            "Referral code not found."
+            "Referral code not found or inactive."
           );
         }
 
@@ -320,7 +315,9 @@ export default function SignupPage() {
     setError("");
     setSuccess("");
 
-    /* Honeypot */
+    /* =======================================================
+       HONEYPOT
+    ======================================================= */
 
     if (form.website.trim()) {
       setError(
@@ -329,6 +326,10 @@ export default function SignupPage() {
 
       return;
     }
+
+    /* =======================================================
+       CLEAN VALUES
+    ======================================================= */
 
     const name = form.name.trim();
 
@@ -346,9 +347,9 @@ export default function SignupPage() {
         .trim()
         .toUpperCase();
 
-    /* =====================================================
+    /* =======================================================
        NAME
-    ===================================================== */
+    ======================================================= */
 
     if (!name) {
       setError(
@@ -367,14 +368,16 @@ export default function SignupPage() {
     }
 
     if (name.length > 80) {
-      setError("Name is too long.");
+      setError(
+        "Name is too long."
+      );
 
       return;
     }
 
-    /* =====================================================
+    /* =======================================================
        EMAIL
-    ===================================================== */
+    ======================================================= */
 
     if (!email) {
       setError(
@@ -395,9 +398,9 @@ export default function SignupPage() {
       return;
     }
 
-    /* =====================================================
+    /* =======================================================
        PASSWORD
-    ===================================================== */
+    ======================================================= */
 
     if (!password) {
       setError(
@@ -447,7 +450,9 @@ export default function SignupPage() {
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (
+      password !== confirmPassword
+    ) {
       setError(
         "Passwords do not match."
       );
@@ -455,22 +460,30 @@ export default function SignupPage() {
       return;
     }
 
-    /* =====================================================
-       OPTIONAL REFERRAL
-    ===================================================== */
+    /* =======================================================
+       REFERRAL REQUIRED
+    ======================================================= */
 
-    if (referralCode) {
-      const referralOkay =
-        await validateReferral(true);
+    if (!referralCode) {
+      setReferralValid(false);
 
-      if (!referralOkay) {
-        return;
-      }
+      setError(
+        "Referral code is required."
+      );
+
+      return;
     }
 
-    /* =====================================================
+    const referralOkay =
+      await validateReferral(true);
+
+    if (!referralOkay) {
+      return;
+    }
+
+    /* =======================================================
        TERMS
-    ===================================================== */
+    ======================================================= */
 
     if (!form.agree) {
       setError(
@@ -483,9 +496,9 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      /* ===================================================
+      /* =====================================================
          CREATE SUPABASE ACCOUNT
-      =================================================== */
+      ===================================================== */
 
       const {
         data,
@@ -497,16 +510,15 @@ export default function SignupPage() {
         options: {
           data: {
             full_name: name,
-
-            /*
-             * Keep referral code in auth metadata.
-             * Database RPC will securely attach it.
-             */
-            referred_by:
-              referralCode || null,
+            referral_code: referralCode,
+            referred_by: referralCode,
           },
         },
       });
+
+      /* =====================================================
+         SIGNUP ERROR
+      ===================================================== */
 
       if (signupError) {
         console.error(
@@ -552,6 +564,10 @@ export default function SignupPage() {
         return;
       }
 
+      /* =====================================================
+         USER CHECK
+      ===================================================== */
+
       if (!data.user) {
         setError(
           "Account could not be created. Please try again."
@@ -560,69 +576,77 @@ export default function SignupPage() {
         return;
       }
 
-      /* ===================================================
+      /* =====================================================
          SESSION CHECK
-      =================================================== */
+         
+         EarnNova does not require email verification.
+      ===================================================== */
 
       if (!data.session) {
         setError(
-          "Account created, but no login session was created. Please disable email confirmation in Supabase Authentication settings."
+          "Account was created, but automatic login was not completed. Please make sure email confirmation is disabled in Supabase Authentication settings."
         );
 
         return;
       }
 
-      /* ===================================================
-         ATTACH REFERRAL SECURELY
-      =================================================== */
+      /* =====================================================
+         SECURE REFERRAL ATTACHMENT
+         
+         IMPORTANT:
+         Browser never calculates or adds referral reward.
+         
+         Database RPC handles the referral attachment.
+      ===================================================== */
 
-      if (referralCode) {
-        const {
-          data: attached,
-          error: attachError,
-        } = await supabase.rpc(
-          "attach_referral",
-          {
-            p_user_id:
-              data.user.id,
+      const {
+        data: attached,
+        error: attachError,
+      } = await supabase.rpc(
+        "attach_referral",
+        {
+          p_user_id: data.user.id,
+          p_referral_code:
+            referralCode,
+        }
+      );
 
-            p_referral_code:
-              referralCode,
-          }
+      if (attachError) {
+        console.error(
+          "ATTACH REFERRAL ERROR:",
+          attachError
         );
 
-        if (attachError) {
-          console.error(
-            "ATTACH REFERRAL ERROR:",
-            attachError
-          );
+        setError(
+          "Account was created, but the referral could not be attached. Please contact EarnNova Team before continuing."
+        );
 
-          /*
-           * Account is already created.
-           * We don't delete it here.
-           * Referral can safely be investigated/fixed
-           * without allowing the customer to modify it.
-           */
+        await supabase.auth.signOut();
 
-          setError(
-            "Account was created, but the referral could not be attached. Please contact support before continuing."
-          );
-
-          return;
-        }
-
-        if (attached !== true) {
-          setError(
-            "Account was created, but the referral code could not be attached."
-          );
-
-          return;
-        }
+        return;
       }
 
-      /* ===================================================
-         LOCAL INFO
-      =================================================== */
+      if (attached !== true) {
+        console.error(
+          "REFERRAL ATTACHMENT RETURNED:",
+          attached
+        );
+
+        setError(
+          "Account was created, but the referral code could not be attached. Please contact EarnNova Team before continuing."
+        );
+
+        await supabase.auth.signOut();
+
+        return;
+      }
+
+      /* =====================================================
+         LOCAL UI INFORMATION
+         
+         localStorage is NOT the auth authority.
+         Supabase session remains authoritative.
+      ===================================================== */
 
       localStorage.setItem(
         "earnNovaLoggedIn",
@@ -639,32 +663,41 @@ export default function SignupPage() {
         name
       );
 
-      if (referralCode) {
-        localStorage.setItem(
-          "earnNovaReferralCode",
-          referralCode
-        );
-      } else {
-        localStorage.removeItem(
-          "earnNovaReferralCode"
-        );
-      }
-
       localStorage.setItem(
         "earnNovaUserId",
         data.user.id
       );
 
-      /* ===================================================
+      localStorage.setItem(
+        "earnNovaReferralCode",
+        referralCode
+      );
+
+      /* =====================================================
+         REMOVE STALE PLAN / ACTIVATION DATA
+      ===================================================== */
+
+      localStorage.removeItem(
+        "earnNovaSelectedPlan"
+      );
+
+      localStorage.removeItem(
+        "earnNovaActivation"
+      );
+
+      /* =====================================================
          SUCCESS
-      =================================================== */
+         
+         NEW USER:
+         Signup → Plans → Activation → Approval → Dashboard
+      ===================================================== */
 
       setSuccess(
-        "Account created successfully. Opening your dashboard..."
+        "Account created successfully. Opening plans..."
       );
 
       window.location.replace(
-        "/dashboard"
+        "/plans"
       );
     } catch (error) {
       console.error(
@@ -702,14 +735,12 @@ export default function SignupPage() {
 
   return (
     <main className="min-h-screen bg-[#f5f7fb] text-slate-900">
-
       {/* =====================================================
           HEADER
       ===================================================== */}
 
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex h-[76px] max-w-7xl items-center justify-between px-5 sm:px-8">
-
           <a
             href="/"
             className="flex items-center gap-3"
@@ -748,26 +779,25 @@ export default function SignupPage() {
       ===================================================== */}
 
       <section className="mx-auto grid min-h-[calc(100vh-76px)] max-w-7xl lg:grid-cols-[0.9fr_1.1fr]">
-
         {/* ===================================================
             LEFT SIDE
         =================================================== */}
 
-        <div className="relative hidden overflow-hidden bg-[#080d16] px-10 py-16 lg:flex lg:flex-col lg:justify-center xl:px-16">
-
+        <div className="relative hidden overflow-hidden bg-[#070b10] px-10 py-16 lg:flex lg:flex-col lg:justify-center xl:px-16">
           <div className="absolute -left-40 -top-40 h-[500px] w-[500px] rounded-full bg-blue-600/15 blur-3xl" />
 
-          <div className="absolute -bottom-40 -right-40 h-[500px] w-[500px] rounded-full bg-indigo-600/15 blur-3xl" />
+          <div className="absolute -bottom-40 -right-40 h-[500px] w-[500px] rounded-full bg-blue-500/10 blur-3xl" />
 
           <div className="relative z-10 max-w-lg">
-
             <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-xs font-semibold text-slate-300">
               <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.7)]" />
+
               Secure registration
             </div>
 
             <h1 className="text-4xl font-black leading-[1.1] tracking-tight text-white xl:text-5xl">
               Create your
+
               <span className="mt-2 block text-blue-400">
                 EarnNova account.
               </span>
@@ -780,7 +810,6 @@ export default function SignupPage() {
             </p>
 
             <div className="mt-10 space-y-4">
-
               {[
                 {
                   icon: ShieldCheck,
@@ -832,7 +861,6 @@ export default function SignupPage() {
         =================================================== */}
 
         <div className="flex items-center justify-center px-4 py-8 sm:px-8 lg:px-12 xl:px-20">
-
           <div className="w-full max-w-[560px]">
 
             {/* MOBILE LOGO */}
@@ -858,10 +886,10 @@ export default function SignupPage() {
 
             <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
 
+              {/* CARD HEADER */}
+
               <div className="border-b border-slate-100 px-6 pb-6 pt-7 sm:px-8">
-
                 <div className="flex items-start justify-between gap-4">
-
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600">
                       Create Account
@@ -882,6 +910,8 @@ export default function SignupPage() {
                   </div>
                 </div>
               </div>
+
+              {/* FORM BODY */}
 
               <div className="px-6 pb-7 pt-6 sm:px-8">
 
@@ -914,6 +944,7 @@ export default function SignupPage() {
                       className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700"
                     >
                       <UserPlus size={15} />
+
                       Full Name
                     </label>
 
@@ -939,6 +970,7 @@ export default function SignupPage() {
                       className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700"
                     >
                       <Mail size={15} />
+
                       Email Address
                     </label>
 
@@ -964,11 +996,11 @@ export default function SignupPage() {
                       className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700"
                     >
                       <LockKeyhole size={15} />
+
                       Password
                     </label>
 
                     <div className="relative">
-
                       <input
                         id="password"
                         name="password"
@@ -990,10 +1022,16 @@ export default function SignupPage() {
                         type="button"
                         onClick={() =>
                           setShowPassword(
-                            (v) => !v
+                            (value) => !value
                           )
                         }
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        disabled={loading}
+                        aria-label={
+                          showPassword
+                            ? "Hide password"
+                            : "Show password"
+                        }
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
                       >
                         {showPassword ? (
                           <EyeOff size={18} />
@@ -1036,7 +1074,7 @@ export default function SignupPage() {
                     )}
                   </div>
 
-                  {/* CONFIRM */}
+                  {/* CONFIRM PASSWORD */}
 
                   <div>
                     <label
@@ -1047,7 +1085,6 @@ export default function SignupPage() {
                     </label>
 
                     <div className="relative">
-
                       <input
                         id="confirmPassword"
                         name="confirmPassword"
@@ -1071,10 +1108,16 @@ export default function SignupPage() {
                         type="button"
                         onClick={() =>
                           setShowConfirm(
-                            (v) => !v
+                            (value) => !value
                           )
                         }
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        disabled={loading}
+                        aria-label={
+                          showConfirm
+                            ? "Hide confirmation password"
+                            : "Show confirmation password"
+                        }
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
                       >
                         {showConfirm ? (
                           <EyeOff size={18} />
@@ -1085,22 +1128,17 @@ export default function SignupPage() {
                     </div>
                   </div>
 
-                  {/* =================================================
-                      OPTIONAL REFERRAL
-                  ================================================= */}
+                  {/* REFERRAL */}
 
                   <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-slate-50 p-4">
 
                     <div className="mb-3 flex items-start gap-3">
-
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-600/20">
                         <Link2 size={17} />
                       </div>
 
                       <div className="min-w-0 flex-1">
-
                         <div className="flex items-center justify-between gap-2">
-
                           <label
                             htmlFor="referralCode"
                             className="text-sm font-bold text-slate-800"
@@ -1108,23 +1146,20 @@ export default function SignupPage() {
                             Referral Code
                           </label>
 
-                          <span className="rounded-full bg-slate-200 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-500">
-                            Optional
+                          <span className="rounded-full bg-blue-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-blue-600">
+                            Required
                           </span>
-
                         </div>
 
                         <p className="mt-1 text-[11px] leading-5 text-slate-500">
-                          Have a referral code?
-                          Enter it here. You can also
-                          leave this empty.
+                          Enter a valid EarnNova
+                          referral code to create
+                          your account.
                         </p>
-
                       </div>
                     </div>
 
                     <div className="relative">
-
                       <input
                         id="referralCode"
                         name="referralCode"
@@ -1134,16 +1169,14 @@ export default function SignupPage() {
                         }
                         onChange={handleChange}
                         onBlur={() =>
-                          validateReferral(
-                            true
-                          )
+                          validateReferral(true)
                         }
                         maxLength={32}
                         autoCapitalize="characters"
                         autoCorrect="off"
                         spellCheck={false}
                         disabled={loading}
-                        placeholder="Enter referral code"
+                        placeholder="EARNNOVA"
                         className={`h-12 w-full rounded-xl border bg-white px-4 pr-24 text-sm font-bold uppercase tracking-wide text-slate-900 outline-none transition placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400 disabled:opacity-60 ${
                           referralValid === true
                             ? "border-emerald-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
@@ -1156,9 +1189,7 @@ export default function SignupPage() {
                       <button
                         type="button"
                         onClick={() =>
-                          validateReferral(
-                            true
-                          )
+                          validateReferral(true)
                         }
                         disabled={
                           referralChecking ||
@@ -1174,9 +1205,7 @@ export default function SignupPage() {
                     </div>
 
                     <div className="mt-2 flex items-center justify-between">
-
                       <div className="flex items-center gap-1.5 text-[10px]">
-
                         {referralValid === true && (
                           <>
                             <Check
@@ -1199,7 +1228,9 @@ export default function SignupPage() {
                         {referralValid === null &&
                           !referralFromLink && (
                             <span className="text-slate-400">
-                              This field is optional
+                              Default code:
+                              {" "}
+                              EARNNOVA
                             </span>
                           )}
 
@@ -1209,7 +1240,6 @@ export default function SignupPage() {
                               Referral link detected
                             </span>
                           )}
-
                       </div>
 
                       <span className="text-[10px] font-medium text-slate-400">
@@ -1242,7 +1272,6 @@ export default function SignupPage() {
                   {/* TERMS */}
 
                   <label className="flex cursor-pointer items-start gap-3">
-
                     <input
                       type="checkbox"
                       name="agree"
@@ -1269,7 +1298,6 @@ export default function SignupPage() {
                       </a>
                       .
                     </span>
-
                   </label>
 
                   {/* SUBMIT */}
@@ -1280,12 +1308,12 @@ export default function SignupPage() {
                       loading ||
                       referralChecking
                     }
-                    className="group flex h-13 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-blue-600/30 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="group flex h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-blue-600/30 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-
                     {loading ? (
                       <>
                         <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+
                         Creating account...
                       </>
                     ) : (
@@ -1298,13 +1326,13 @@ export default function SignupPage() {
                         />
                       </>
                     )}
-
                   </button>
 
                   {/* MOBILE LOGIN */}
 
                   <p className="text-center text-sm text-slate-500 sm:hidden">
                     Already have an account?{" "}
+
                     <a
                       href="/login"
                       className="font-bold text-blue-600"
@@ -1312,7 +1340,6 @@ export default function SignupPage() {
                       Login
                     </a>
                   </p>
-
                 </form>
               </div>
             </div>
@@ -1321,9 +1348,9 @@ export default function SignupPage() {
 
             <div className="mt-5 flex items-center justify-center gap-2 text-[11px] font-medium text-slate-400">
               <ShieldCheck size={15} />
+
               Secure authentication powered by EarnNova
             </div>
-
           </div>
         </div>
       </section>

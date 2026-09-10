@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
+
 import {
   ArrowLeft,
   Plus,
@@ -15,58 +23,49 @@ import {
   ClipboardList,
   X,
   ExternalLink,
-  Layers3,
   Info,
 } from "lucide-react";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+/* =========================================================
+   SUPABASE
+========================================================= */
+
+const supabase = createClient();
+
+/* =========================================================
+   TYPES
+========================================================= */
 
 type Task = {
   id: string;
   title: string;
   description: string | null;
   reward: number;
-  task_type: string | null;
-  link: string | null;
-  is_active: boolean;
+  task_url: string | null;
+  status: string | null;
   created_at: string;
 };
 
-const PLAN_LIMITS = [
-  {
-    name: "Starter",
-    tasks: 10,
-    videos: 40,
-    price: "$2.50",
-  },
-  {
-    name: "Basic",
-    tasks: 20,
-    videos: 80,
-    price: "$5",
-  },
-  {
-    name: "Pro",
-    tasks: 30,
-    videos: 160,
-    price: "$10",
-  },
-  {
-    name: "Premium",
-    tasks: 40,
-    videos: 280,
-    price: "$20",
-  },
-  {
-    name: "VIP",
-    tasks: 50,
-    videos: 400,
-    price: "$50",
-  },
-];
+type RpcLikeResult = {
+  success?: boolean;
+  message?: string;
+};
+
+/* =========================================================
+   CONSTANTS
+========================================================= */
+
+/*
+ * EarnNova current rule:
+ *
+ * Tasks = 10/day
+ * Videos = 50/day
+ *
+ * These are separate systems.
+ */
+
+const DAILY_TASK_LIMIT = 10;
+const DAILY_VIDEO_LIMIT = 50;
 
 const TASK_TYPES = [
   "Visit Website",
@@ -76,208 +75,480 @@ const TASK_TYPES = [
   "Other",
 ];
 
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function getRpcResult(
+  data: unknown
+): RpcLikeResult {
+  if (Array.isArray(data)) {
+    return (
+      (data[0] as
+        | RpcLikeResult
+        | undefined) ?? {}
+    );
+  }
+
+  if (
+    data &&
+    typeof data === "object"
+  ) {
+    return data as RpcLikeResult;
+  }
+
+  return {};
+}
+
+/* =========================================================
+   PAGE
+========================================================= */
+
 export default function AdminTasksPage() {
   const router = useRouter();
 
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [search, setSearch] = useState("");
+  const [tasks, setTasks] =
+    useState<Task[]>([]);
 
-  const [showModal, setShowModal] = useState(false);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [loading, setLoading] =
+    useState(true);
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [reward, setReward] = useState("");
-  const [taskType, setTaskType] = useState("Visit Website");
-  const [link, setLink] = useState("");
-  const [isActive, setIsActive] = useState(true);
+  const [saving, setSaving] =
+    useState(false);
 
-  const [message, setMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
+  const [processingId, setProcessingId] =
+    useState<string | null>(null);
 
-  async function checkAdmin() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  const [search, setSearch] =
+    useState("");
 
-    if (!user) {
-      router.replace("/admin/login");
-      return false;
-    }
+  const [showModal, setShowModal] =
+    useState(false);
 
-    const { data: profile, error } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
+  const [editingTask, setEditingTask] =
+    useState<Task | null>(null);
 
-    if (error || profile?.role !== "admin") {
-      router.replace("/dashboard");
-      return false;
-    }
+  const [title, setTitle] =
+    useState("");
 
-    return true;
-  }
+  const [description, setDescription] =
+    useState("");
 
-  async function loadTasks() {
-    try {
+  const [reward, setReward] =
+    useState("");
+
+  const [taskType, setTaskType] =
+    useState("Visit Website");
+
+  const [taskUrl, setTaskUrl] =
+    useState("");
+
+  const [isActive, setIsActive] =
+    useState(true);
+
+  const [message, setMessage] =
+    useState("");
+
+  const [errorMessage, setErrorMessage] =
+    useState("");
+
+  /* =======================================================
+     ADMIN CHECK
+  ======================================================= */
+
+  const checkAdmin =
+    useCallback(async () => {
+      const {
+        data: {
+          user,
+        },
+        error: userError,
+      } =
+        await supabase.auth.getUser();
+
+      if (
+        userError ||
+        !user
+      ) {
+        router.replace(
+          "/admin/login"
+        );
+
+        return false;
+      }
+
+      const {
+        data: profile,
+        error: profileError,
+      } =
+        await supabase
+          .from("profiles")
+          .select(
+            "id, role"
+          )
+          .eq(
+            "id",
+            user.id
+          )
+          .maybeSingle();
+
+      if (
+        profileError ||
+        profile?.role !==
+          "admin"
+      ) {
+        router.replace(
+          "/dashboard"
+        );
+
+        return false;
+      }
+
+      return true;
+    }, [router]);
+
+  /* =======================================================
+     LOAD TASKS
+  ======================================================= */
+
+  const loadTasks =
+    useCallback(async () => {
       setLoading(true);
       setErrorMessage("");
 
-      const allowed = await checkAdmin();
+      try {
+        const allowed =
+          await checkAdmin();
 
-      if (!allowed) return;
+        if (!allowed) {
+          return;
+        }
 
-      const { data, error } = await supabase
-        .from("tasks")
-        .select("*")
-        .order("created_at", {
-          ascending: false,
-        });
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("tasks")
+          .select(
+            `
+              id,
+              title,
+              description,
+              reward,
+              task_url,
+              status,
+              created_at
+            `
+          )
+          .order(
+            "created_at",
+            {
+              ascending: false,
+            }
+          );
 
-      if (error) {
-        console.error(error);
-        setErrorMessage(error.message);
+        if (error) {
+          console.error(
+            "TASK LOAD ERROR:",
+            error
+          );
+
+          throw new Error(
+            error.message
+          );
+        }
+
+        const formatted: Task[] =
+          (data ?? []).map(
+            (item) => ({
+              id: item.id,
+              title:
+                item.title,
+              description:
+                item.description,
+              reward: Number(
+                item.reward ?? 0
+              ),
+              task_url:
+                item.task_url,
+              status:
+                item.status,
+              created_at:
+                item.created_at,
+            })
+          );
+
+        setTasks(
+          formatted
+        );
+      } catch (error) {
+        console.error(
+          "LOAD TASKS ERROR:",
+          error
+        );
+
         setTasks([]);
-        return;
-      }
 
-      setTasks((data as Task[]) || []);
-    } catch (error: any) {
-      console.error(error);
-      setErrorMessage(
-        error?.message || "Failed to load tasks."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "Failed to load tasks."
+        );
+      } finally {
+        setLoading(false);
+      }
+    }, [checkAdmin]);
+
+  /* =======================================================
+     INITIAL LOAD
+  ======================================================= */
 
   useEffect(() => {
-    loadTasks();
-  }, []);
+    void loadTasks();
+  }, [loadTasks]);
+
+  /* =======================================================
+     FORM RESET
+  ======================================================= */
 
   function resetForm() {
     setEditingTask(null);
     setTitle("");
     setDescription("");
     setReward("");
-    setTaskType("Visit Website");
-    setLink("");
+    setTaskType(
+      "Visit Website"
+    );
+    setTaskUrl("");
     setIsActive(true);
   }
 
+  /* =======================================================
+     CREATE MODAL
+  ======================================================= */
+
   function openCreateModal() {
     resetForm();
+
     setMessage("");
     setErrorMessage("");
+
     setShowModal(true);
   }
 
-  function openEditModal(task: Task) {
-    setEditingTask(task);
+  /* =======================================================
+     EDIT MODAL
+  ======================================================= */
 
-    setTitle(task.title);
-    setDescription(task.description || "");
-    setReward(String(task.reward));
-    setTaskType(
-      task.task_type || "Visit Website"
+  function openEditModal(
+    task: Task
+  ) {
+    setEditingTask(
+      task
     );
-    setLink(task.link || "");
-    setIsActive(task.is_active);
+
+    setTitle(
+      task.title
+    );
+
+    setDescription(
+      task.description ??
+        ""
+    );
+
+    setReward(
+      String(task.reward)
+    );
+
+    setTaskUrl(
+      task.task_url ??
+        ""
+    );
+
+    setIsActive(
+      task.status ===
+        "active"
+    );
+
+    setTaskType(
+      "Visit Website"
+    );
 
     setMessage("");
     setErrorMessage("");
+
     setShowModal(true);
   }
+
+  /* =======================================================
+     CLOSE MODAL
+  ======================================================= */
 
   function closeModal() {
     if (saving) return;
 
     setShowModal(false);
     setEditingTask(null);
+
     setMessage("");
     setErrorMessage("");
   }
 
+  /* =======================================================
+     SAVE TASK
+  ======================================================= */
+
   async function saveTask() {
+    if (saving) return;
+
     setMessage("");
     setErrorMessage("");
 
-    if (!title.trim()) {
+    /* -----------------------------------------------------
+       TITLE
+    ----------------------------------------------------- */
+
+    const cleanTitle =
+      title.trim();
+
+    if (!cleanTitle) {
       setErrorMessage(
         "Task title is required."
       );
+
       return;
     }
 
-    const numericReward = Number(reward);
+    /* -----------------------------------------------------
+       REWARD
+    ----------------------------------------------------- */
+
+    const numericReward =
+      Number(reward);
 
     if (
-      !reward ||
-      Number.isNaN(numericReward) ||
+      !reward.trim() ||
+      !Number.isFinite(
+        numericReward
+      ) ||
       numericReward <= 0
     ) {
       setErrorMessage(
         "Enter a valid reward amount."
       );
+
       return;
     }
 
-    if (link.trim()) {
+    /* -----------------------------------------------------
+       URL
+    ----------------------------------------------------- */
+
+    const cleanUrl =
+      taskUrl.trim();
+
+    if (cleanUrl) {
       try {
-        new URL(link.trim());
+        const parsed =
+          new URL(
+            cleanUrl
+          );
+
+        if (
+          parsed.protocol !==
+            "http:" &&
+          parsed.protocol !==
+            "https:"
+        ) {
+          throw new Error(
+            "Invalid protocol"
+          );
+        }
       } catch {
         setErrorMessage(
-          "Please enter a valid task link."
+          "Please enter a valid HTTP or HTTPS task link."
         );
+
         return;
       }
     }
 
+    /* -----------------------------------------------------
+       ADMIN CHECK
+    ----------------------------------------------------- */
+
+    const allowed =
+      await checkAdmin();
+
+    if (!allowed) {
+      return;
+    }
+
+    setSaving(true);
+
     try {
-      setSaving(true);
+      const payload = {
+        title:
+          cleanTitle,
+        description:
+          description.trim() ||
+          null,
+        reward:
+          numericReward,
+        task_url:
+          cleanUrl ||
+          null,
+        status:
+          isActive
+            ? "active"
+            : "inactive",
+      };
+
+      /* --------------------------------------------------
+         UPDATE
+      -------------------------------------------------- */
 
       if (editingTask) {
-        const { error } = await supabase
-          .from("tasks")
-          .update({
-            title: title.trim(),
-            description:
-              description.trim() || null,
-            reward: numericReward,
-            task_type: taskType,
-            link: link.trim() || null,
-            is_active: isActive,
-          })
-          .eq("id", editingTask.id);
+        const {
+          error,
+        } =
+          await supabase
+            .from("tasks")
+            .update(
+              payload
+            )
+            .eq(
+              "id",
+              editingTask.id
+            );
 
         if (error) {
-          setErrorMessage(error.message);
-          return;
+          throw new Error(
+            error.message
+          );
         }
 
         setMessage(
           "Task updated successfully."
         );
       } else {
-        const { error } = await supabase
-          .from("tasks")
-          .insert({
-            title: title.trim(),
-            description:
-              description.trim() || null,
-            reward: numericReward,
-            task_type: taskType,
-            link: link.trim() || null,
-            is_active: isActive,
-          });
+        /* ------------------------------------------------
+           CREATE
+        ------------------------------------------------ */
+
+        const {
+          error,
+        } =
+          await supabase
+            .from("tasks")
+            .insert(
+              payload
+            );
 
         if (error) {
-          setErrorMessage(error.message);
-          return;
+          throw new Error(
+            error.message
+          );
         }
 
         setMessage(
@@ -287,109 +558,275 @@ export default function AdminTasksPage() {
 
       await loadTasks();
 
-      setTimeout(() => {
-        setShowModal(false);
-        setEditingTask(null);
-        setMessage("");
-      }, 700);
-    } catch (error: any) {
+      window.setTimeout(
+        () => {
+          setShowModal(
+            false
+          );
+
+          setEditingTask(
+            null
+          );
+
+          setMessage("");
+        },
+        700
+      );
+    } catch (error) {
+      console.error(
+        "SAVE TASK ERROR:",
+        error
+      );
+
       setErrorMessage(
-        error?.message ||
-          "Something went wrong."
+        error instanceof Error
+          ? error.message
+          : "Something went wrong."
       );
     } finally {
       setSaving(false);
     }
   }
 
-  async function toggleTask(task: Task) {
-    setErrorMessage("");
-    setMessage("");
+  /* =======================================================
+     TOGGLE TASK
+  ======================================================= */
 
-    const { error } = await supabase
-      .from("tasks")
-      .update({
-        is_active: !task.is_active,
-      })
-      .eq("id", task.id);
-
-    if (error) {
-      setErrorMessage(error.message);
+  async function toggleTask(
+    task: Task
+  ) {
+    if (processingId) {
       return;
     }
-
-    setMessage(
-      task.is_active
-        ? "Task deactivated."
-        : "Task activated."
-    );
-
-    await loadTasks();
-  }
-
-  async function deleteTask(task: Task) {
-    const confirmed = window.confirm(
-      `Delete "${task.title}"?\n\nThis action cannot be undone.`
-    );
-
-    if (!confirmed) return;
 
     setErrorMessage("");
     setMessage("");
 
-    const { error } = await supabase
-      .from("tasks")
-      .delete()
-      .eq("id", task.id);
+    const allowed =
+      await checkAdmin();
 
-    if (error) {
-      setErrorMessage(error.message);
+    if (!allowed) {
       return;
     }
 
-    setMessage(
-      "Task deleted successfully."
+    setProcessingId(
+      task.id
     );
 
-    await loadTasks();
-  }
+    try {
+      const nextStatus =
+        task.status ===
+        "active"
+          ? "inactive"
+          : "active";
 
-  const filteredTasks = useMemo(() => {
-    const keyword = search
-      .trim()
-      .toLowerCase();
+      const {
+        error,
+      } =
+        await supabase
+          .from("tasks")
+          .update({
+            status:
+              nextStatus,
+          })
+          .eq(
+            "id",
+            task.id
+          );
 
-    if (!keyword) return tasks;
+      if (error) {
+        throw new Error(
+          error.message
+        );
+      }
 
-    return tasks.filter((task) => {
-      return (
-        task.title
-          .toLowerCase()
-          .includes(keyword) ||
-        task.description
-          ?.toLowerCase()
-          .includes(keyword) ||
-        task.task_type
-          ?.toLowerCase()
-          .includes(keyword)
+      setMessage(
+        nextStatus ===
+          "active"
+          ? "Task activated."
+          : "Task deactivated."
       );
-    });
-  }, [tasks, search]);
 
-  const activeTasks = tasks.filter(
-    (task) => task.is_active
-  ).length;
+      await loadTasks();
+    } catch (error) {
+      console.error(
+        "TOGGLE TASK ERROR:",
+        error
+      );
 
-  const inactiveTasks = tasks.filter(
-    (task) => !task.is_active
-  ).length;
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to update task."
+      );
+    } finally {
+      setProcessingId(
+        null
+      );
+    }
+  }
+
+  /* =======================================================
+     DELETE TASK
+  ======================================================= */
+
+  async function deleteTask(
+    task: Task
+  ) {
+    if (processingId) {
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `Delete "${task.title}"?\n\nThis action cannot be undone.`
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setErrorMessage("");
+    setMessage("");
+
+    const allowed =
+      await checkAdmin();
+
+    if (!allowed) {
+      return;
+    }
+
+    setProcessingId(
+      task.id
+    );
+
+    try {
+      const {
+        error,
+      } =
+        await supabase
+          .from("tasks")
+          .delete()
+          .eq(
+            "id",
+            task.id
+          );
+
+      if (error) {
+        throw new Error(
+          error.message
+        );
+      }
+
+      setMessage(
+        "Task deleted successfully."
+      );
+
+      await loadTasks();
+    } catch (error) {
+      console.error(
+        "DELETE TASK ERROR:",
+        error
+      );
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete task."
+      );
+    } finally {
+      setProcessingId(
+        null
+      );
+    }
+  }
+
+  /* =======================================================
+     FILTER
+  ======================================================= */
+
+  const filteredTasks =
+    useMemo(() => {
+      const keyword =
+        search
+          .trim()
+          .toLowerCase();
+
+      if (!keyword) {
+        return tasks;
+      }
+
+      return tasks.filter(
+        (task) =>
+          task.title
+            .toLowerCase()
+            .includes(
+              keyword
+            ) ||
+          task.description
+            ?.toLowerCase()
+            .includes(
+              keyword
+            ) ||
+          task.task_url
+            ?.toLowerCase()
+            .includes(
+              keyword
+            )
+      );
+    }, [
+      tasks,
+      search,
+    ]);
+
+  /* =======================================================
+     STATS
+  ======================================================= */
+
+  const activeTasks =
+    tasks.filter(
+      (task) =>
+        task.status ===
+        "active"
+    ).length;
+
+  const inactiveTasks =
+    tasks.length -
+    activeTasks;
+
+  /* =======================================================
+     DATE
+  ======================================================= */
+
+  function formatDate(
+    date: string
+  ) {
+    const parsed =
+      new Date(date);
+
+    if (
+      Number.isNaN(
+        parsed.getTime()
+      )
+    ) {
+      return "Unknown";
+    }
+
+    return parsed.toLocaleString();
+  }
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
 
   return (
-    <main className="min-h-screen bg-slate-100 text-slate-900">
+    <main className="min-h-screen bg-[#070b10] text-slate-100">
 
       <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
 
-        {/* HEADER */}
+        {/* =================================================
+            HEADER
+        ================================================= */}
 
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 
@@ -397,40 +834,36 @@ export default function AdminTasksPage() {
 
             <button
               onClick={() =>
-                router.push("/admin")
+                router.push(
+                  "/admin"
+                )
               }
-              className="
-                flex h-11 w-11 shrink-0
-                items-center justify-center
-                rounded-xl
-                border border-slate-200
-                bg-white
-                text-slate-600
-                shadow-sm
-                transition
-                hover:bg-slate-50
-                hover:text-slate-900
-              "
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-[#11151b] text-slate-400 transition hover:border-blue-500/30 hover:bg-[#151b23] hover:text-white"
+              aria-label="Back to admin"
             >
-              <ArrowLeft size={20} />
+              <ArrowLeft
+                size={20}
+              />
             </button>
 
             <div>
+
               <div className="flex items-center gap-2">
 
-                <h1 className="text-2xl font-bold">
+                <h1 className="text-2xl font-black tracking-tight text-white">
                   Task Management
                 </h1>
 
-                <span className="hidden rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-blue-600 sm:inline-flex">
-                  Admin
+                <span className="hidden rounded-full border border-blue-500/20 bg-blue-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-blue-400 sm:inline-flex">
+                  EarnNova Team
                 </span>
 
               </div>
 
               <p className="mt-1 text-sm text-slate-500">
-                Create, manage and control earning tasks
+                Create and manage customer earning tasks.
               </p>
+
             </div>
 
           </div>
@@ -438,26 +871,15 @@ export default function AdminTasksPage() {
           <div className="flex gap-2">
 
             <button
-              onClick={loadTasks}
-              disabled={loading}
-              className="
-                inline-flex
-                items-center
-                justify-center
-                gap-2
-                rounded-xl
-                border border-slate-200
-                bg-white
-                px-4
-                py-3
-                text-sm
-                font-semibold
-                text-slate-700
-                shadow-sm
-                transition
-                hover:bg-slate-50
-                disabled:opacity-60
-              "
+              onClick={() => {
+                setMessage("");
+                setErrorMessage("");
+                void loadTasks();
+              }}
+              disabled={
+                loading
+              }
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-800 bg-[#11151b] px-4 py-3 text-sm font-bold text-slate-300 transition hover:bg-[#151b23] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <RefreshCw
                 size={17}
@@ -472,24 +894,10 @@ export default function AdminTasksPage() {
             </button>
 
             <button
-              onClick={openCreateModal}
-              className="
-                inline-flex
-                items-center
-                justify-center
-                gap-2
-                rounded-xl
-                bg-blue-600
-                px-4
-                py-3
-                text-sm
-                font-semibold
-                text-white
-                shadow-sm
-                shadow-blue-600/20
-                transition
-                hover:bg-blue-700
-              "
+              onClick={
+                openCreateModal
+              }
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/10 transition hover:bg-blue-500"
             >
               <Plus size={18} />
 
@@ -500,239 +908,221 @@ export default function AdminTasksPage() {
 
         </div>
 
+        {/* =================================================
+            DAILY LIMIT INFO
+        ================================================= */}
 
-        {/* PLAN LIMIT INFO */}
+        <section className="mb-6 rounded-2xl border border-blue-500/20 bg-[#11151b]">
 
-        <div className="mb-6 overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm">
-
-          <div className="flex flex-col gap-3 border-b border-slate-100 bg-blue-50/60 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 border-b border-slate-800 p-5 sm:flex-row sm:items-center sm:justify-between">
 
             <div className="flex items-start gap-3">
 
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
-                <Layers3 size={20} />
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-400">
+                <Info
+                  size={20}
+                />
               </div>
 
               <div>
-                <h2 className="font-bold text-slate-900">
-                  Daily Task Limits
+
+                <h2 className="font-black text-white">
+                  Daily Earning Limits
                 </h2>
 
-                <p className="mt-1 text-xs text-slate-500">
-                  User task limits are controlled by their active membership plan.
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Tasks and videos are separate earning systems.
                 </p>
+
               </div>
 
             </div>
 
-            <div className="flex items-center gap-2 text-xs text-blue-600">
-              <Info size={15} />
-              <span>
-                Videos have separate limits
+            <div className="flex flex-wrap gap-2">
+
+              <span className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-xs font-bold text-blue-400">
+                {DAILY_TASK_LIMIT} Tasks / Day
               </span>
+
+              <span className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs font-bold text-cyan-400">
+                {DAILY_VIDEO_LIMIT} Videos / Day
+              </span>
+
             </div>
 
           </div>
 
-          <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-5 sm:divide-y-0">
+          <div className="grid gap-3 p-5 sm:grid-cols-2">
 
-            {PLAN_LIMITS.map((plan) => (
-              <div
-                key={plan.name}
-                className="p-4 text-center"
-              >
-                <p className="text-xs font-semibold text-slate-500">
-                  {plan.name}
-                </p>
+            <div className="rounded-xl border border-slate-800 bg-[#0b0f14] p-4">
 
-                <p className="mt-1 text-xl font-black text-slate-900">
-                  {plan.tasks}
-                </p>
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
+                Tasks
+              </p>
 
-                <p className="text-[11px] text-slate-400">
-                  tasks / day
-                </p>
+              <p className="mt-2 text-2xl font-black text-white">
+                {DAILY_TASK_LIMIT}
+              </p>
 
-                <p className="mt-2 text-[10px] font-medium text-blue-600">
-                  {plan.videos} videos
-                </p>
-              </div>
-            ))}
+              <p className="mt-1 text-xs text-slate-500">
+                Maximum customer task completions per day
+              </p>
+
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-[#0b0f14] p-4">
+
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
+                Videos
+              </p>
+
+              <p className="mt-2 text-2xl font-black text-white">
+                {DAILY_VIDEO_LIMIT}
+              </p>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Maximum customer video completions per day
+              </p>
+
+            </div>
 
           </div>
 
-        </div>
+        </section>
 
-
-        {/* STATS */}
+        {/* =================================================
+            STATS
+        ================================================= */}
 
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <StatCard
+            title="Total Tasks"
+            value={String(
+              tasks.length
+            )}
+            icon={
+              <ClipboardList
+                size={21}
+              />
+            }
+            type="blue"
+          />
 
-            <div className="mb-4 flex items-center justify-between">
+          <StatCard
+            title="Active Tasks"
+            value={String(
+              activeTasks
+            )}
+            icon={
+              <CheckCircle
+                size={21}
+              />
+            }
+            type="success"
+          />
 
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                <ClipboardList size={21} />
-              </div>
-
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                All
-              </span>
-
-            </div>
-
-            <p className="text-sm text-slate-500">
-              Total Tasks
-            </p>
-
-            <p className="mt-1 text-2xl font-black">
-              {tasks.length}
-            </p>
-
-          </div>
-
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-
-            <div className="mb-4 flex items-center justify-between">
-
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                <CheckCircle size={21} />
-              </div>
-
-              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-600">
-                Live
-              </span>
-
-            </div>
-
-            <p className="text-sm text-slate-500">
-              Active Tasks
-            </p>
-
-            <p className="mt-1 text-2xl font-black">
-              {activeTasks}
-            </p>
-
-          </div>
-
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-
-            <div className="mb-4 flex items-center justify-between">
-
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
-                <XCircle size={21} />
-              </div>
-
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                Off
-              </span>
-
-            </div>
-
-            <p className="text-sm text-slate-500">
-              Inactive Tasks
-            </p>
-
-            <p className="mt-1 text-2xl font-black">
-              {inactiveTasks}
-            </p>
-
-          </div>
+          <StatCard
+            title="Inactive Tasks"
+            value={String(
+              inactiveTasks
+            )}
+            icon={
+              <XCircle
+                size={21}
+              />
+            }
+            type="muted"
+          />
 
         </div>
 
-
-        {/* MESSAGES */}
+        {/* =================================================
+            MESSAGES
+        ================================================= */}
 
         {message && (
-          <div className="mb-5 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
-            <CheckCircle size={17} />
+          <div className="mb-5 flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-300">
+            <CheckCircle
+              size={17}
+            />
             {message}
           </div>
         )}
 
         {errorMessage && (
-          <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          <div className="mb-5 flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold leading-6 text-red-300">
+            <XCircle
+              size={17}
+              className="mt-0.5 shrink-0"
+            />
             {errorMessage}
           </div>
         )}
 
+        {/* =================================================
+            SEARCH
+        ================================================= */}
 
-        {/* SEARCH */}
-
-        <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-5 rounded-2xl border border-slate-800 bg-[#11151b] p-4">
 
           <div className="relative">
 
             <Search
               size={18}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600"
             />
 
             <input
               type="text"
-              placeholder="Search by task name, description or type..."
+              placeholder="Search task, description or URL..."
               value={search}
               onChange={(e) =>
-                setSearch(e.target.value)
+                setSearch(
+                  e.target.value
+                )
               }
-              className="
-                w-full
-                rounded-xl
-                border border-slate-200
-                bg-slate-50
-                py-3
-                pl-10
-                pr-4
-                text-sm
-                outline-none
-                transition
-                focus:border-blue-500
-                focus:bg-white
-                focus:ring-2
-                focus:ring-blue-100
-              "
+              className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] py-3 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500"
             />
 
           </div>
 
         </div>
 
-
-        {/* TASK LIST */}
+        {/* =================================================
+            TASK LIST
+        ================================================= */}
 
         {loading ? (
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+          <div className="rounded-2xl border border-slate-800 bg-[#11151b] p-12 text-center">
 
             <RefreshCw
               size={30}
-              className="mx-auto animate-spin text-blue-600"
+              className="mx-auto animate-spin text-blue-500"
             />
 
-            <p className="mt-3 text-sm text-slate-500">
+            <p className="mt-3 text-sm font-semibold text-slate-500">
               Loading tasks...
             </p>
 
           </div>
 
-        ) : filteredTasks.length === 0 ? (
+        ) : filteredTasks.length ===
+          0 ? (
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+          <div className="rounded-2xl border border-slate-800 bg-[#11151b] p-12 text-center">
 
             <ClipboardList
               size={42}
-              className="mx-auto text-slate-300"
+              className="mx-auto text-slate-700"
             />
 
-            <h2 className="mt-4 text-lg font-bold">
+            <h2 className="mt-4 text-lg font-black text-white">
               No tasks found
             </h2>
 
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-600">
               {search
                 ? "Try a different search."
                 : "Create your first earning task."}
@@ -740,8 +1130,10 @@ export default function AdminTasksPage() {
 
             {!search && (
               <button
-                onClick={openCreateModal}
-                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                onClick={
+                  openCreateModal
+                }
+                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-500"
               >
                 <Plus size={17} />
                 Create Task
@@ -754,135 +1146,179 @@ export default function AdminTasksPage() {
 
           <div className="space-y-4">
 
-            {filteredTasks.map((task) => (
+            {filteredTasks.map(
+              (task) => {
 
-              <div
-                key={task.id}
-                className="
-                  rounded-2xl
-                  border border-slate-200
-                  bg-white
-                  p-5
-                  shadow-sm
-                  transition
-                  hover:border-slate-300
-                  hover:shadow-md
-                "
-              >
+                const active =
+                  task.status ===
+                  "active";
 
-                <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                const processing =
+                  processingId ===
+                  task.id;
 
-                  {/* INFO */}
+                return (
+                  <div
+                    key={
+                      task.id
+                    }
+                    className="rounded-2xl border border-slate-800 bg-[#11151b] p-5 transition hover:border-slate-700"
+                  >
 
-                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
 
-                    <div className="flex flex-wrap items-center gap-2">
+                      {/* INFO */}
 
-                      <h3 className="font-bold text-slate-900">
-                        {task.title}
-                      </h3>
+                      <div className="min-w-0 flex-1">
 
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                          task.is_active
-                            ? "bg-emerald-50 text-emerald-600"
-                            : "bg-slate-100 text-slate-500"
-                        }`}
-                      >
-                        {task.is_active
-                          ? "Active"
-                          : "Inactive"}
-                      </span>
+                        <div className="flex flex-wrap items-center gap-2">
 
-                    </div>
+                          <h3 className="font-black text-white">
+                            {
+                              task.title
+                            }
+                          </h3>
 
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${
+                              active
+                                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                                : "border-slate-700 bg-slate-800/50 text-slate-500"
+                            }`}
+                          >
+                            {active
+                              ? "Active"
+                              : "Inactive"}
+                          </span>
 
-                    {task.description && (
-                      <p className="mt-2 max-w-3xl line-clamp-2 text-sm leading-6 text-slate-500">
-                        {task.description}
-                      </p>
-                    )}
+                        </div>
 
+                        {task.description && (
+                          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+                            {
+                              task.description
+                            }
+                          </p>
+                        )}
 
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
 
-                      <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
-                        {task.task_type ||
-                          "General"}
-                      </span>
+                          <span className="rounded-lg border border-slate-800 bg-[#0b0f14] px-3 py-1.5 text-xs font-semibold text-slate-400">
+                            General Task
+                          </span>
 
-                      <span className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-600">
-                        +$
-                        {Number(
-                          task.reward
-                        ).toFixed(2)}
-                      </span>
+                          {/* ADMIN CAN SEE REWARD */}
 
-                      {task.link && (
-                        <a
-                          href={task.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-100"
+                          <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-400">
+                            +$
+                            {Number(
+                              task.reward
+                            ).toFixed(
+                              2
+                            )}
+                          </span>
+
+                          {task.task_url && (
+                            <a
+                              href={
+                                task.task_url
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-1.5 text-xs font-semibold text-blue-400 transition hover:bg-blue-500/20"
+                            >
+                              Open Link
+
+                              <ExternalLink
+                                size={
+                                  12
+                                }
+                              />
+                            </a>
+                          )}
+
+                          <span className="text-[10px] text-slate-700">
+                            {formatDate(
+                              task.created_at
+                            )}
+                          </span>
+
+                        </div>
+
+                      </div>
+
+                      {/* ACTIONS */}
+
+                      <div className="flex shrink-0 flex-wrap items-center gap-2">
+
+                        <button
+                          onClick={() =>
+                            void toggleTask(
+                              task
+                            )
+                          }
+                          disabled={
+                            processing
+                          }
+                          className={`rounded-xl px-3 py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                            active
+                              ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+                              : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                          }`}
                         >
-                          Open Link
-                          <ExternalLink
-                            size={12}
+                          {processing
+                            ? "..."
+                            : active
+                            ? "Deactivate"
+                            : "Activate"}
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            openEditModal(
+                              task
+                            )
+                          }
+                          disabled={
+                            processing
+                          }
+                          className="inline-flex items-center gap-2 rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-sm font-bold text-blue-400 transition hover:bg-blue-500/20 disabled:opacity-40"
+                        >
+                          <Pencil
+                            size={
+                              15
+                            }
                           />
-                        </a>
-                      )}
+                          Edit
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            void deleteTask(
+                              task
+                            )
+                          }
+                          disabled={
+                            processing
+                          }
+                          className="inline-flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-400 transition hover:bg-red-500/20 disabled:opacity-40"
+                        >
+                          <Trash2
+                            size={
+                              15
+                            }
+                          />
+                          Delete
+                        </button>
+
+                      </div>
 
                     </div>
 
                   </div>
-
-
-                  {/* ACTIONS */}
-
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-
-                    <button
-                      onClick={() =>
-                        toggleTask(task)
-                      }
-                      className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                        task.is_active
-                          ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
-                          : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                      }`}
-                    >
-                      {task.is_active
-                        ? "Deactivate"
-                        : "Activate"}
-                    </button>
-
-                    <button
-                      onClick={() =>
-                        openEditModal(task)
-                      }
-                      className="inline-flex items-center gap-2 rounded-xl bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
-                    >
-                      <Pencil size={15} />
-                      Edit
-                    </button>
-
-                    <button
-                      onClick={() =>
-                        deleteTask(task)
-                      }
-                      className="inline-flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-100"
-                    >
-                      <Trash2 size={15} />
-                      Delete
-                    </button>
-
-                  </div>
-
-                </div>
-
-              </div>
-
-            ))}
+                );
+              }
+            )}
 
           </div>
 
@@ -890,42 +1326,64 @@ export default function AdminTasksPage() {
 
       </div>
 
-
-      {/* CREATE / EDIT MODAL */}
+      {/* ===================================================
+          CREATE / EDIT MODAL
+      =================================================== */}
 
       {showModal && (
 
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          onMouseDown={(
+            event
+          ) => {
+            if (
+              event.target ===
+              event.currentTarget
+            ) {
+              closeModal();
+            }
+          }}
+        >
 
-          <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
+          <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-slate-800 bg-[#11151b] shadow-2xl">
 
-            {/* MODAL HEADER */}
+            {/* HEADER */}
 
-            <div className="flex items-center justify-between border-b border-slate-100 p-5">
+            <div className="flex items-center justify-between border-b border-slate-800 p-5">
 
               <div>
 
-                <h2 className="text-lg font-bold">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-500">
+                  EarnNova Team
+                </p>
+
+                <h2 className="mt-1 text-lg font-black text-white">
                   {editingTask
                     ? "Edit Task"
                     : "Create New Task"}
                 </h2>
 
-                <p className="mt-1 text-xs text-slate-500">
-                  Configure the earning task
+                <p className="mt-1 text-xs text-slate-600">
+                  Configure the customer earning task.
                 </p>
 
               </div>
 
               <button
-                onClick={closeModal}
-                className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
+                onClick={
+                  closeModal
+                }
+                disabled={
+                  saving
+                }
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-[#0b0f14] text-slate-500 transition hover:text-white disabled:opacity-50"
+                aria-label="Close"
               >
                 <X size={18} />
               </button>
 
             </div>
-
 
             {/* BODY */}
 
@@ -935,67 +1393,54 @@ export default function AdminTasksPage() {
 
               <div>
 
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                <label className="mb-1.5 block text-sm font-bold text-slate-300">
                   Task Title
                 </label>
 
                 <input
-                  value={title}
-                  onChange={(e) =>
-                    setTitle(e.target.value)
+                  value={
+                    title
                   }
-                  placeholder="e.g. Visit EarnNova Website"
-                  className="
-                    w-full
-                    rounded-xl
-                    border border-slate-200
-                    px-4 py-3
-                    text-sm
-                    outline-none
-                    transition
-                    focus:border-blue-500
-                    focus:ring-2
-                    focus:ring-blue-100
-                  "
+                  onChange={(e) =>
+                    setTitle(
+                      e.target.value
+                    )
+                  }
+                  placeholder="e.g. Visit website"
+                  disabled={
+                    saving
+                  }
+                  className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 disabled:opacity-50"
                 />
 
               </div>
-
 
               {/* DESCRIPTION */}
 
               <div>
 
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                <label className="mb-1.5 block text-sm font-bold text-slate-300">
                   Description
                 </label>
 
                 <textarea
-                  value={description}
+                  value={
+                    description
+                  }
                   onChange={(e) =>
                     setDescription(
                       e.target.value
                     )
                   }
                   rows={3}
+                  disabled={
+                    saving
+                  }
                   placeholder="Explain what the user needs to do..."
-                  className="
-                    w-full
-                    resize-none
-                    rounded-xl
-                    border border-slate-200
-                    px-4 py-3
-                    text-sm
-                    outline-none
-                    transition
-                    focus:border-blue-500
-                    focus:ring-2
-                    focus:ring-blue-100
-                  "
+                  className="w-full resize-none rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 disabled:opacity-50"
                 />
 
               </div>
-
 
               {/* REWARD + TYPE */}
 
@@ -1003,7 +1448,7 @@ export default function AdminTasksPage() {
 
                 <div>
 
-                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  <label className="mb-1.5 block text-sm font-bold text-slate-300">
                     Reward ($)
                   </label>
 
@@ -1011,152 +1456,162 @@ export default function AdminTasksPage() {
                     type="number"
                     min="0.01"
                     step="0.01"
-                    value={reward}
+                    value={
+                      reward
+                    }
                     onChange={(e) =>
                       setReward(
                         e.target.value
                       )
                     }
                     placeholder="0.10"
-                    className="
-                      w-full
-                      rounded-xl
-                      border border-slate-200
-                      px-4 py-3
-                      text-sm
-                      outline-none
-                      focus:border-blue-500
-                      focus:ring-2
-                      focus:ring-blue-100
-                    "
+                    disabled={
+                      saving
+                    }
+                    className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500 disabled:opacity-50"
                   />
 
-                  <p className="mt-1.5 text-[11px] text-slate-400">
-                    Reward is credited after successful task completion.
+                  <p className="mt-1.5 text-[10px] leading-4 text-slate-600">
+                    Reward is controlled by EarnNova Team and should be credited only through secure server-side completion logic.
                   </p>
 
                 </div>
 
-
                 <div>
 
-                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  <label className="mb-1.5 block text-sm font-bold text-slate-300">
                     Task Type
                   </label>
 
                   <select
-                    value={taskType}
+                    value={
+                      taskType
+                    }
                     onChange={(e) =>
                       setTaskType(
                         e.target.value
                       )
                     }
-                    className="
-                      w-full
-                      rounded-xl
-                      border border-slate-200
-                      bg-white
-                      px-4 py-3
-                      text-sm
-                      outline-none
-                      focus:border-blue-500
-                      focus:ring-2
-                      focus:ring-blue-100
-                    "
+                    disabled={
+                      saving
+                    }
+                    className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3 text-sm text-white outline-none focus:border-blue-500 disabled:opacity-50"
                   >
                     {TASK_TYPES.map(
-                      (type) => (
+                      (
+                        type
+                      ) => (
                         <option
-                          key={type}
-                          value={type}
+                          key={
+                            type
+                          }
+                          value={
+                            type
+                          }
+                          className="bg-[#11151b]"
                         >
-                          {type}
+                          {
+                            type
+                          }
                         </option>
                       )
                     )}
                   </select>
 
+                  <p className="mt-1.5 text-[10px] text-slate-600">
+                    Type is for internal task organization.
+                  </p>
+
                 </div>
 
               </div>
 
-
-              {/* LINK */}
+              {/* URL */}
 
               <div>
 
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                <label className="mb-1.5 block text-sm font-bold text-slate-300">
                   Task Link
                 </label>
 
                 <input
                   type="url"
-                  value={link}
+                  value={
+                    taskUrl
+                  }
                   onChange={(e) =>
-                    setLink(
+                    setTaskUrl(
                       e.target.value
                     )
                   }
                   placeholder="https://example.com"
-                  className="
-                    w-full
-                    rounded-xl
-                    border border-slate-200
-                    px-4 py-3
-                    text-sm
-                    outline-none
-                    focus:border-blue-500
-                    focus:ring-2
-                    focus:ring-blue-100
-                  "
+                  disabled={
+                    saving
+                  }
+                  className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500 disabled:opacity-50"
                 />
 
-                <p className="mt-1.5 text-xs text-slate-400">
-                  Optional. Users can open this link while completing the task.
+                <p className="mt-1.5 text-[10px] leading-4 text-slate-600">
+                  Optional. The customer can open this link while completing the task.
                 </p>
 
               </div>
 
+              {/* DAILY LIMIT */}
 
-              {/* PLAN INFORMATION */}
-
-              <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+              <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4">
 
                 <div className="flex items-start gap-3">
 
-                  <div className="mt-0.5 text-blue-600">
-                    <Info size={17} />
+                  <div className="mt-0.5 text-blue-400">
+                    <Info
+                      size={17}
+                    />
                   </div>
 
                   <div>
 
-                    <p className="text-sm font-bold text-slate-800">
-                      Plan-based daily limits
+                    <p className="text-sm font-black text-white">
+                      Current daily limits
                     </p>
 
                     <p className="mt-1 text-xs leading-5 text-slate-500">
-                      The number of tasks a user can complete per day is controlled by their membership plan.
+                      These limits are separate and should be enforced server-side.
                     </p>
 
-                    <div className="mt-3 grid grid-cols-5 gap-1.5">
+                    <div className="mt-3 grid grid-cols-2 gap-2">
 
-                      {PLAN_LIMITS.map(
-                        (plan) => (
-                          <div
-                            key={plan.name}
-                            className="rounded-lg bg-white px-1.5 py-2 text-center"
-                          >
-                            <p className="truncate text-[9px] font-bold text-slate-500">
-                              {plan.name}
-                            </p>
+                      <div className="rounded-xl border border-slate-800 bg-[#0b0f14] p-3">
 
-                            <p className="mt-0.5 text-sm font-black text-blue-600">
-                              {plan.tasks}
-                            </p>
+                        <p className="text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                          Tasks
+                        </p>
 
-                          </div>
-                        )
-                      )}
+                        <p className="mt-1 text-lg font-black text-blue-400">
+                          {DAILY_TASK_LIMIT}
+                        </p>
+
+                        <p className="text-[10px] text-slate-600">
+                          per day
+                        </p>
+
+                      </div>
+
+                      <div className="rounded-xl border border-slate-800 bg-[#0b0f14] p-3">
+
+                        <p className="text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                          Videos
+                        </p>
+
+                        <p className="mt-1 text-lg font-black text-cyan-400">
+                          {DAILY_VIDEO_LIMIT}
+                        </p>
+
+                        <p className="text-[10px] text-slate-600">
+                          per day
+                        </p>
+
+                      </div>
 
                     </div>
 
@@ -1166,19 +1621,18 @@ export default function AdminTasksPage() {
 
               </div>
 
-
               {/* STATUS */}
 
-              <div className="flex items-center justify-between rounded-xl bg-slate-50 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-[#0b0f14] p-4">
 
                 <div>
 
-                  <p className="text-sm font-semibold">
+                  <p className="text-sm font-bold text-white">
                     Task Status
                   </p>
 
-                  <p className="mt-1 text-xs text-slate-500">
-                    Active tasks are available to eligible users.
+                  <p className="mt-1 text-xs text-slate-600">
+                    Active tasks can be shown to eligible customers.
                   </p>
 
                 </div>
@@ -1187,14 +1641,19 @@ export default function AdminTasksPage() {
                   type="button"
                   onClick={() =>
                     setIsActive(
-                      !isActive
+                      (value) =>
+                        !value
                     )
+                  }
+                  disabled={
+                    saving
                   }
                   className={`relative h-7 w-12 rounded-full transition ${
                     isActive
                       ? "bg-blue-600"
-                      : "bg-slate-300"
+                      : "bg-slate-700"
                   }`}
+                  aria-label="Toggle task status"
                 >
                   <span
                     className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${
@@ -1207,61 +1666,46 @@ export default function AdminTasksPage() {
 
               </div>
 
+              {/* MODAL MESSAGE */}
 
               {message && (
-                <div className="rounded-xl bg-emerald-50 p-3 text-sm font-medium text-emerald-700">
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-300">
                   {message}
                 </div>
               )}
 
               {errorMessage && (
-                <div className="rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700">
+                <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm font-semibold text-red-300">
                   {errorMessage}
                 </div>
               )}
 
             </div>
 
-
             {/* FOOTER */}
 
-            <div className="flex gap-3 border-t border-slate-100 p-5">
+            <div className="flex gap-3 border-t border-slate-800 p-5">
 
               <button
-                onClick={closeModal}
-                disabled={saving}
-                className="
-                  flex-1
-                  rounded-xl
-                  bg-slate-100
-                  px-4 py-3
-                  text-sm
-                  font-semibold
-                  text-slate-700
-                  transition
-                  hover:bg-slate-200
-                  disabled:opacity-50
-                "
+                onClick={
+                  closeModal
+                }
+                disabled={
+                  saving
+                }
+                className="flex-1 rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3 text-sm font-bold text-slate-400 transition hover:bg-[#151b23] hover:text-white disabled:opacity-50"
               >
                 Cancel
               </button>
 
               <button
-                onClick={saveTask}
-                disabled={saving}
-                className="
-                  flex-1
-                  rounded-xl
-                  bg-blue-600
-                  px-4 py-3
-                  text-sm
-                  font-semibold
-                  text-white
-                  shadow-sm
-                  transition
-                  hover:bg-blue-700
-                  disabled:opacity-50
-                "
+                onClick={() =>
+                  void saveTask()
+                }
+                disabled={
+                  saving
+                }
+                className="flex-1 rounded-xl bg-blue-600 px-4 py-3 text-sm font-black text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving
                   ? "Saving..."
@@ -1279,5 +1723,83 @@ export default function AdminTasksPage() {
       )}
 
     </main>
+  );
+}
+
+/* =========================================================
+   STAT CARD
+========================================================= */
+
+function StatCard({
+  title,
+  value,
+  icon,
+  type,
+}: {
+  title: string;
+  value: string;
+  icon: ReactNode;
+  type:
+    | "warning"
+    | "blue"
+    | "success"
+    | "muted";
+}) {
+  const styles = {
+    warning: {
+      box:
+        "border-amber-500/20 bg-amber-500/5",
+      icon:
+        "border-amber-500/20 bg-amber-500/10 text-amber-400",
+    },
+
+    blue: {
+      box:
+        "border-blue-500/20 bg-blue-500/5",
+      icon:
+        "border-blue-500/20 bg-blue-500/10 text-blue-400",
+    },
+
+    success: {
+      box:
+        "border-emerald-500/20 bg-emerald-500/5",
+      icon:
+        "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
+    },
+
+    muted: {
+      box:
+        "border-slate-800 bg-[#11151b]",
+      icon:
+        "border-slate-800 bg-slate-800/50 text-slate-500",
+    },
+  };
+
+  return (
+    <div
+      className={`rounded-2xl border p-5 ${styles[type].box}`}
+    >
+      <div className="flex items-center justify-between">
+
+        <div>
+
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+            {title}
+          </p>
+
+          <p className="mt-2 text-2xl font-black text-white">
+            {value}
+          </p>
+
+        </div>
+
+        <div
+          className={`flex h-11 w-11 items-center justify-center rounded-xl border ${styles[type].icon}`}
+        >
+          {icon}
+        </div>
+
+      </div>
+    </div>
   );
 }

@@ -20,8 +20,8 @@ const plans = [
   {
     name: "Starter",
     price: 2.5,
-    tasks: "10–20",
-    videos: "40–60",
+    tasks: 10,
+    videos: 50,
     description: "A simple start for new members",
     icon: Medal,
     popular: false,
@@ -29,8 +29,8 @@ const plans = [
   {
     name: "Basic",
     price: 5,
-    tasks: "20–40",
-    videos: "80–120",
+    tasks: 10,
+    videos: 50,
     description: "More opportunities to earn",
     icon: Zap,
     popular: false,
@@ -38,8 +38,8 @@ const plans = [
   {
     name: "Pro",
     price: 10,
-    tasks: "30–60",
-    videos: "160–240",
+    tasks: 10,
+    videos: 50,
     description: "More earning opportunities",
     icon: Crown,
     popular: true,
@@ -47,8 +47,8 @@ const plans = [
   {
     name: "Premium",
     price: 20,
-    tasks: "50–80",
-    videos: "280–420",
+    tasks: 10,
+    videos: 50,
     description: "For active members",
     icon: Gem,
     popular: false,
@@ -56,8 +56,8 @@ const plans = [
   {
     name: "VIP",
     price: 50,
-    tasks: "70–100",
-    videos: "400–600",
+    tasks: 10,
+    videos: 50,
     description: "Maximum access and opportunities",
     icon: Sparkles,
     popular: false,
@@ -66,31 +66,85 @@ const plans = [
 
 const PLAN_DURATION_MONTHS = 3;
 
+function LogoMark() {
+  return (
+    <div className="relative flex h-12 w-12 items-center justify-center">
+      <div className="absolute inset-0 rounded-[15px] bg-blue-600/20 blur-md" />
+
+      <div className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-[15px] border border-blue-400/20 bg-gradient-to-br from-white via-slate-100 to-blue-50 shadow-xl">
+        <div className="absolute -right-3 -top-3 h-7 w-7 rounded-full bg-blue-500/20 blur-md" />
+
+        <div className="relative flex items-center justify-center">
+          <span className="text-[21px] font-black italic tracking-[-0.15em] text-slate-950">
+            E
+          </span>
+
+          <span className="-ml-0.5 text-[21px] font-black italic tracking-[-0.15em] text-blue-600">
+            N
+          </span>
+        </div>
+
+        <div className="absolute bottom-1.5 left-2 h-[2px] w-5 rounded-full bg-blue-500" />
+      </div>
+    </div>
+  );
+}
+
+function Brand() {
+  return (
+    <div className="flex items-center gap-3">
+      <LogoMark />
+
+      <div>
+        <h1 className="text-[20px] font-black tracking-tight text-white">
+          Earn<span className="text-blue-500">Nova</span>
+        </h1>
+
+        <p className="text-[9px] font-medium uppercase tracking-[0.24em] text-slate-400">
+          Earn • Grow • Repeat
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function PlansPage() {
   const router = useRouter();
 
   const handleSelectPlan = (plan: (typeof plans)[number]) => {
-    const totalPrice = plan.price;
+    const selectedPlan = {
+      name: plan.name,
+      monthlyPrice: plan.price,
 
-    localStorage.setItem(
-      "earnNovaSelectedPlan",
-      JSON.stringify({
-        name: plan.name,
-        monthlyPrice: plan.price,
-        totalPrice,
-        months: PLAN_DURATION_MONTHS,
-        taskRange: plan.tasks,
-        videoRange: plan.videos,
-      })
-    );
+      // Price shown is the complete activation price.
+      // Do NOT multiply this by 3.
+      totalPrice: plan.price,
 
-    router.push("/activate");
+      months: PLAN_DURATION_MONTHS,
+
+      // Current EarnNova limits.
+      dailyTasks: 10,
+      dailyVideos: 50,
+
+      taskRange: String(plan.tasks),
+      videoRange: String(plan.videos),
+    };
+
+    try {
+      localStorage.setItem(
+        "earnNovaSelectedPlan",
+        JSON.stringify(selectedPlan)
+      );
+
+      router.push("/activate");
+    } catch (error) {
+      console.error("Could not save selected plan:", error);
+    }
   };
 
   return (
-    <main className="min-h-screen bg-[#070b14] px-4 py-6 text-white sm:px-6">
-      <div className="mx-auto max-w-4xl">
-
+    <main className="min-h-screen bg-[#050b16] px-4 py-6 text-white sm:px-6">
+      <div className="mx-auto max-w-5xl">
         {/* HEADER */}
         <div className="mb-8 flex items-center justify-between">
           <Link
@@ -101,18 +155,12 @@ export default function PlansPage() {
               size={15}
               className="transition-transform group-hover:-translate-x-0.5"
             />
-            Dashboard
+
+            <span className="hidden sm:inline">Dashboard</span>
+            <span className="sm:hidden">Back</span>
           </Link>
 
-          <div className="text-right">
-            <p className="text-[9px] font-semibold uppercase tracking-[0.25em] text-blue-400/70">
-              EarnNova
-            </p>
-
-            <p className="mt-0.5 text-sm font-bold text-white">
-              Membership
-            </p>
-          </div>
+          <Brand />
         </div>
 
         {/* HERO */}
@@ -162,7 +210,7 @@ export default function PlansPage() {
                     : "border-white/10 bg-white/[0.035] hover:border-blue-500/20 hover:bg-white/[0.05]"
                 }`}
               >
-                {/* DECORATIVE GLOW */}
+                {/* GLOW */}
                 {plan.popular && (
                   <div className="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-blue-500/10 blur-3xl" />
                 )}
@@ -205,7 +253,7 @@ export default function PlansPage() {
                 <div className="relative mt-5">
                   <div className="flex items-end gap-2">
                     <span className="text-3xl font-black tracking-tight">
-                      ${plan.price}
+                      ${plan.price.toFixed(2)}
                     </span>
 
                     <span className="mb-1 text-[10px] font-medium text-slate-500">
@@ -220,7 +268,6 @@ export default function PlansPage() {
 
                 {/* TASK + VIDEO ACCESS */}
                 <div className="relative mt-5 grid grid-cols-2 gap-3 border-t border-white/10 pt-4">
-
                   {/* TASKS */}
                   <div className="rounded-xl border border-white/5 bg-black/20 p-3">
                     <div className="mb-2 flex items-center gap-2">
@@ -237,11 +284,11 @@ export default function PlansPage() {
                     </div>
 
                     <p className="text-sm font-black text-white">
-                      {plan.tasks}
+                      {plan.tasks}/day
                     </p>
 
                     <p className="mt-0.5 text-[8px] text-slate-600">
-                      Daily opportunities
+                      Daily limit
                     </p>
                   </div>
 
@@ -261,18 +308,17 @@ export default function PlansPage() {
                     </div>
 
                     <p className="text-sm font-black text-white">
-                      {plan.videos}
+                      {plan.videos}/day
                     </p>
 
                     <p className="mt-0.5 text-[8px] text-slate-600">
-                      Daily opportunities
+                      Daily limit
                     </p>
                   </div>
                 </div>
 
                 {/* FEATURES */}
                 <div className="relative mt-4 space-y-2 border-t border-white/10 pt-4">
-
                   <div className="flex items-center gap-2.5">
                     <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/10">
                       <Check
@@ -298,10 +344,24 @@ export default function PlansPage() {
                       3-month membership access
                     </span>
                   </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/10">
+                      <Check
+                        size={11}
+                        className="text-blue-400"
+                      />
+                    </div>
+
+                    <span className="text-[10px] text-slate-400">
+                      Up to 10 tasks + 50 videos daily
+                    </span>
+                  </div>
                 </div>
 
-                {/* SELECT BUTTON */}
+                {/* SELECT */}
                 <button
+                  type="button"
                   onClick={() => handleSelectPlan(plan)}
                   className={`relative mt-5 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold transition-all ${
                     plan.popular
@@ -335,8 +395,8 @@ export default function PlansPage() {
 
               <p className="mt-1 text-[9px] leading-5 text-slate-600">
                 Your selected membership remains active for 3 months.
-                Task and video availability may vary according to your
-                selected membership and platform availability.
+                Task and video availability is limited to 10 tasks
+                and 50 videos per day.
               </p>
             </div>
           </div>
@@ -348,7 +408,6 @@ export default function PlansPage() {
             Choose a membership to continue to activation.
           </p>
         </div>
-
       </div>
     </main>
   );

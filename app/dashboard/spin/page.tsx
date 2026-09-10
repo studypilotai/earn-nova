@@ -2,12 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { createClient } from "@/lib/supabase/client";
 
 type SpinResult = {
   success: boolean;
@@ -29,35 +24,9 @@ const wheelRewards = [
   "$0.02",
 ];
 
-const rewardInfo = [
-  {
-    amount: "$0.00",
-    chance: "40%",
-  },
-  {
-    amount: "$0.02",
-    chance: "25%",
-  },
-  {
-    amount: "$0.05",
-    chance: "18%",
-  },
-  {
-    amount: "$0.10",
-    chance: "10%",
-  },
-  {
-    amount: "$0.20",
-    chance: "5%",
-  },
-  {
-    amount: "$0.50",
-    chance: "2%",
-  },
-];
-
 export default function SpinPage() {
   const router = useRouter();
+  const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
   const [spinning, setSpinning] = useState(false);
@@ -81,12 +50,11 @@ export default function SpinPage() {
         return;
       }
 
-      const { data: profile, error: profileError } =
-        await supabase
-          .from("profiles")
-          .select("wallet")
-          .eq("id", user.id)
-          .maybeSingle();
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("wallet")
+        .eq("id", user.id)
+        .maybeSingle();
 
       if (profileError && profileError.code !== "PGRST116") {
         console.error(profileError);
@@ -111,6 +79,23 @@ export default function SpinPage() {
     };
   }, [router]);
 
+  /*
+   * Convert the server reward into the correct wheel position.
+   * This only controls the visual landing position.
+   * The server/RPC remains the source of truth for the reward.
+   */
+  const getRewardIndex = (reward: number) => {
+    const normalizedReward = Number(reward).toFixed(2);
+
+    const index = wheelRewards.findIndex(
+      (value) =>
+        Number.parseFloat(value.replace("$", "")).toFixed(2) ===
+        normalizedReward
+    );
+
+    return index >= 0 ? index : 0;
+  };
+
   const handleSpin = async () => {
     if (spinning) return;
 
@@ -123,18 +108,11 @@ export default function SpinPage() {
     setResult(null);
     setSpinning(true);
 
-    const visualRotation =
-      rotation +
-      360 * 7 +
-      Math.floor(Math.random() * 360);
-
-    setRotation(visualRotation);
-
     try {
-      await new Promise((resolve) =>
-        setTimeout(resolve, 4200)
-      );
-
+      /*
+       * Server decides the actual reward first.
+       * Then the wheel visually lands on that reward.
+       */
       const { data, error: rpcError } =
         await supabase.rpc("spin_and_win");
 
@@ -148,21 +126,63 @@ export default function SpinPage() {
 
       const spinResult = data as SpinResult;
 
+      const rewardIndex = getRewardIndex(
+        Number(spinResult.reward)
+      );
+
+      /*
+       * Pointer is at the top.
+       *
+       * Our first segment is centered at the top.
+       * Every segment is exactly 45 degrees apart.
+       *
+       * Add multiple full rotations for a premium spin effect.
+       */
+      const targetAngle = rewardIndex * 45;
+
+      const currentNormalized =
+        ((rotation % 360) + 360) % 360;
+
+      const targetNormalized =
+        ((targetAngle % 360) + 360) % 360;
+
+      let extraAngle =
+        targetNormalized - currentNormalized;
+
+      if (extraAngle < 0) {
+        extraAngle += 360;
+      }
+
+      const finalRotation =
+        rotation +
+        360 * 7 +
+        extraAngle;
+
+      setRotation(finalRotation);
+
+      /*
+       * Give the wheel enough time to finish.
+       */
+      await new Promise((resolve) =>
+        setTimeout(resolve, 4200)
+      );
+
       setResult(spinResult);
 
-      setSpinsUsed(Number(spinResult.spins_used));
+      setSpinsUsed(
+        Number(spinResult.spins_used)
+      );
 
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
       if (user) {
-        const { data: profile } =
-          await supabase
-            .from("profiles")
-            .select("wallet")
-            .eq("id", user.id)
-            .maybeSingle();
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("wallet")
+          .eq("id", user.id)
+          .maybeSingle();
 
         if (profile) {
           setWallet(Number(profile.wallet));
@@ -223,7 +243,7 @@ export default function SpinPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#070b10] text-white">
         <div className="text-center">
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-slate-700 border-t-blue-500" />
 
@@ -236,26 +256,23 @@ export default function SpinPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-6 text-white sm:px-6 lg:px-8">
-
+    <main className="min-h-screen bg-[#070b10] px-4 py-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
 
         {/* HEADER */}
 
         <div className="mb-8 flex items-center justify-between gap-4">
-
           <button
             onClick={() => router.push("/dashboard")}
-            className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-blue-500/30 hover:bg-slate-800 hover:text-white"
+            className="flex items-center gap-2 rounded-xl border border-slate-800 bg-[#11151b] px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-blue-500/30 hover:bg-slate-800 hover:text-white"
           >
             <span className="text-lg">←</span>
             Dashboard
           </button>
 
           <div className="flex items-center gap-3">
-
             {wallet !== null && (
-              <div className="hidden rounded-xl border border-slate-800 bg-slate-900 px-4 py-2 text-right sm:block">
+              <div className="hidden rounded-xl border border-slate-800 bg-[#11151b] px-4 py-2 text-right sm:block">
                 <p className="text-[10px] uppercase tracking-wider text-slate-500">
                   Wallet
                 </p>
@@ -266,7 +283,7 @@ export default function SpinPage() {
               </div>
             )}
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-2 text-right">
+            <div className="rounded-xl border border-slate-800 bg-[#11151b] px-4 py-2 text-right">
               <p className="text-[10px] uppercase tracking-wider text-slate-500">
                 Spins Left
               </p>
@@ -275,15 +292,12 @@ export default function SpinPage() {
                 {spinsRemaining}/5
               </p>
             </div>
-
           </div>
         </div>
-
 
         {/* TITLE */}
 
         <div className="mb-10 text-center">
-
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-xs font-bold tracking-wide text-blue-400">
             🎁 DAILY REWARD
           </div>
@@ -296,9 +310,7 @@ export default function SpinPage() {
             Spin once every day for free and get a
             chance to earn extra rewards.
           </p>
-
         </div>
-
 
         {/* MAIN GRID */}
 
@@ -306,27 +318,24 @@ export default function SpinPage() {
 
           {/* WHEEL */}
 
-          <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-2xl sm:p-8">
-
+          <section className="rounded-3xl border border-slate-800 bg-[#11151b] p-5 shadow-2xl sm:p-8">
             <div className="flex flex-col items-center">
 
-              {/* WHEEL CONTAINER */}
+              {/* WHEEL */}
 
               <div className="relative flex items-center justify-center">
 
                 {/* POINTER */}
 
-                <div className="absolute left-1/2 top-[-8px] z-40 -translate-x-1/2">
-
+                <div className="absolute left-1/2 top-[-10px] z-50 -translate-x-1/2">
                   <div className="relative">
-
                     <div
                       className="
                         h-0
                         w-0
-                        border-l-[14px]
-                        border-r-[14px]
-                        border-t-[30px]
+                        border-l-[15px]
+                        border-r-[15px]
+                        border-t-[32px]
                         border-l-transparent
                         border-r-transparent
                         border-t-white
@@ -334,12 +343,9 @@ export default function SpinPage() {
                       "
                     />
 
-                    <div className="absolute left-1/2 top-[-3px] h-2 w-2 -translate-x-1/2 rounded-full bg-blue-400" />
-
+                    <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-blue-400 shadow-lg" />
                   </div>
-
                 </div>
-
 
                 {/* OUTER RING */}
 
@@ -376,9 +382,14 @@ export default function SpinPage() {
                         ? "transform 4200ms cubic-bezier(0.12,0.8,0.18,1)"
                         : "none",
 
+                      /*
+                       * First slice is centered exactly at the top.
+                       *
+                       * 8 slices × 45 degrees.
+                       */
                       background: `
                         conic-gradient(
-                          from -22.5deg,
+                          from -112.5deg,
                           #2563eb 0deg 45deg,
                           #0f172a 45deg 90deg,
                           #2563eb 90deg 135deg,
@@ -394,30 +405,55 @@ export default function SpinPage() {
 
                     {/* SLICE DIVIDERS */}
 
-                    {Array.from({ length: 8 }).map(
-                      (_, index) => {
-                        const angle = index * 45;
+                    {Array.from({
+                      length: 8,
+                    }).map((_, index) => {
+                      const angle =
+                        index * 45;
 
-                        return (
-                          <div
-                            key={index}
-                            className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-1/2 w-[2px] origin-bottom bg-white/15"
-                            style={{
-                              transform: `translateX(-50%) rotate(${angle}deg)`,
-                            }}
-                          />
-                        );
-                      }
-                    )}
-
+                      return (
+                        <div
+                          key={index}
+                          className="
+                            pointer-events-none
+                            absolute
+                            left-1/2
+                            top-1/2
+                            z-10
+                            h-1/2
+                            w-[2px]
+                            origin-bottom
+                            bg-white/20
+                          "
+                          style={{
+                            transform: `
+                              translateX(-50%)
+                              rotate(${angle}deg)
+                            `,
+                          }}
+                        />
+                      );
+                    })}
 
                     {/* REWARD LABELS */}
 
                     {wheelRewards.map(
                       (reward, index) => {
-
+                        /*
+                         * Each amount is positioned at the exact
+                         * center of its 45° slice.
+                         *
+                         * -90° = top
+                         *  -45° = top-right
+                         *    0° = right
+                         *   45° = bottom-right
+                         *   90° = bottom
+                         *  135° = bottom-left
+                         *  180° = left
+                         *  225° = top-left
+                         */
                         const angle =
-                          index * 45 + 22.5;
+                          index * 45 - 90;
 
                         return (
                           <div
@@ -430,7 +466,7 @@ export default function SpinPage() {
                               z-20
                               flex
                               h-12
-                              w-[72px]
+                              w-[76px]
                               -translate-x-1/2
                               -translate-y-1/2
                               items-center
@@ -438,25 +474,35 @@ export default function SpinPage() {
                               rounded-xl
                               border
                               border-white/10
-                              bg-black/15
+                              bg-black/20
                               text-center
                               text-[13px]
                               font-black
                               tracking-tight
                               text-white
-                              drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]
+                              shadow-[0_2px_8px_rgba(0,0,0,0.35)]
                               sm:h-14
-                              sm:w-[88px]
+                              sm:w-[92px]
                               sm:text-[15px]
                             "
                             style={{
+                              /*
+                               * Label radius is responsive:
+                               * mobile ≈ 105px
+                               * desktop ≈ 136px
+                               *
+                               * This keeps every amount exactly
+                               * inside the middle of its slice.
+                               */
                               transform: `
                                 translate(-50%, -50%)
                                 rotate(${angle}deg)
-                                translateY(-108px)
+                                translateY(-var(--label-radius))
                                 rotate(-${angle}deg)
                               `,
-                            }}
+                              "--label-radius":
+                                "105px",
+                            } as React.CSSProperties}
                           >
                             {reward}
                           </div>
@@ -464,8 +510,17 @@ export default function SpinPage() {
                       }
                     )}
 
+                    {/* DESKTOP LABEL RADIUS */}
 
-                    {/* INNER CIRCLE */}
+                    <style jsx>{`
+                      @media (min-width: 640px) {
+                        div[style*="--label-radius"] {
+                          --label-radius: 136px !important;
+                        }
+                      }
+                    `}</style>
+
+                    {/* CENTER */}
 
                     <div
                       className="
@@ -474,8 +529,8 @@ export default function SpinPage() {
                         top-1/2
                         z-30
                         flex
-                        h-[82px]
-                        w-[82px]
+                        h-[84px]
+                        w-[84px]
                         -translate-x-1/2
                         -translate-y-1/2
                         items-center
@@ -485,11 +540,10 @@ export default function SpinPage() {
                         border-slate-700
                         bg-slate-950
                         shadow-[0_0_30px_rgba(0,0,0,0.8)]
-                        sm:h-[100px]
-                        sm:w-[100px]
+                        sm:h-[102px]
+                        sm:w-[102px]
                       "
                     >
-
                       <div
                         className="
                           flex
@@ -509,15 +563,10 @@ export default function SpinPage() {
                       >
                         🎁
                       </div>
-
                     </div>
-
                   </div>
-
                 </div>
-
               </div>
-
 
               {/* SPIN BUTTON */}
 
@@ -548,14 +597,10 @@ export default function SpinPage() {
                   sm:text-lg
                 "
               >
-
                 {spinning ? (
                   <span className="flex items-center justify-center gap-3">
-
                     <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-
                     SPINNING...
-
                   </span>
                 ) : spinsRemaining <= 0 ? (
                   "DAILY LIMIT REACHED"
@@ -564,7 +609,6 @@ export default function SpinPage() {
                 ) : (
                   "🎡 SPIN — $0.30"
                 )}
-
               </button>
 
               <p className="mt-3 text-center text-xs text-slate-500">
@@ -575,7 +619,6 @@ export default function SpinPage() {
                   : "This extra spin will cost $0.30."}
               </p>
 
-
               {/* ERROR */}
 
               {error && (
@@ -584,12 +627,10 @@ export default function SpinPage() {
                 </div>
               )}
 
-
               {/* RESULT */}
 
               {result && !spinning && (
                 <div className="mt-7 w-full max-w-md rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6 text-center">
-
                   <div className="text-5xl">
                     {result.reward > 0
                       ? "🎉"
@@ -617,7 +658,6 @@ export default function SpinPage() {
                   )}
 
                   <div className="mt-5 border-t border-slate-800 pt-4">
-
                     <p className="text-xs text-slate-500">
                       Spins remaining today
                     </p>
@@ -625,15 +665,11 @@ export default function SpinPage() {
                     <p className="mt-1 text-lg font-bold text-blue-400">
                       {result.spins_remaining}
                     </p>
-
                   </div>
-
                 </div>
               )}
-
             </div>
           </section>
-
 
           {/* SIDE PANEL */}
 
@@ -642,15 +678,12 @@ export default function SpinPage() {
             {/* DAILY FREE SPIN */}
 
             <div className="rounded-3xl border border-blue-500/20 bg-blue-500/5 p-6">
-
               <div className="flex items-center gap-4">
-
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 text-2xl">
                   🎁
                 </div>
 
                 <div>
-
                   <p className="font-bold">
                     Daily Free Spin
                   </p>
@@ -658,13 +691,10 @@ export default function SpinPage() {
                   <p className="mt-1 text-xs text-slate-500">
                     One free spin every day
                   </p>
-
                 </div>
-
               </div>
 
               <div className="mt-5 flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/50 p-4">
-
                 <span className="text-sm text-slate-400">
                   Status
                 </span>
@@ -680,16 +710,12 @@ export default function SpinPage() {
                     ? "AVAILABLE"
                     : "USED"}
                 </span>
-
               </div>
-
             </div>
-
 
             {/* EXTRA SPINS */}
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6">
-
+            <div className="rounded-3xl border border-slate-800 bg-[#11151b] p-6">
               <h2 className="text-lg font-bold">
                 Extra Spins
               </h2>
@@ -701,9 +727,7 @@ export default function SpinPage() {
               </p>
 
               <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-
                 <div className="flex items-center justify-between">
-
                   <div>
                     <p className="text-xs text-slate-500">
                       Cost per extra spin
@@ -717,15 +741,11 @@ export default function SpinPage() {
                   <div className="rounded-lg bg-blue-500/10 px-3 py-2 text-xs font-bold text-blue-400">
                     PAID
                   </div>
-
                 </div>
-
               </div>
 
               <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-
                 <div className="flex items-center justify-between">
-
                   <div>
                     <p className="text-xs text-slate-500">
                       Daily limit
@@ -737,7 +757,6 @@ export default function SpinPage() {
                   </div>
 
                   <div className="text-right">
-
                     <p className="text-xs text-slate-500">
                       Used
                     </p>
@@ -745,67 +764,47 @@ export default function SpinPage() {
                     <p className="mt-1 font-bold text-blue-400">
                       {spinsUsed}/5
                     </p>
-
                   </div>
-
                 </div>
-
               </div>
-
             </div>
-
 
             {/* REWARDS */}
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6">
-
+            <div className="rounded-3xl border border-slate-800 bg-[#11151b] p-6">
               <h2 className="text-lg font-bold">
                 Possible Rewards
               </h2>
 
               <p className="mt-1 text-xs leading-5 text-slate-500">
-                Rewards are selected randomly by the
-                secure server.
+                Available rewards on the wheel.
               </p>
 
               <div className="mt-5 grid grid-cols-2 gap-3">
-
-                {rewardInfo.map(
-                  ({ amount, chance }) => (
-                    <div
-                      key={amount}
-                      className="rounded-xl border border-slate-800 bg-slate-950/60 p-3"
-                    >
-
-                      <p className="font-bold text-blue-400">
-                        {amount}
-                      </p>
-
-                      <p className="mt-1 text-[11px] text-slate-600">
-                        {chance} chance
-                      </p>
-
-                    </div>
-                  )
-                )}
-
+                {Array.from(
+                  new Set(wheelRewards)
+                ).map((amount) => (
+                  <div
+                    key={amount}
+                    className="flex items-center justify-center rounded-xl border border-slate-800 bg-slate-950/60 p-4"
+                  >
+                    <p className="text-center font-bold text-blue-400">
+                      {amount}
+                    </p>
+                  </div>
+                ))}
               </div>
-
             </div>
-
 
             {/* SECURITY */}
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6">
-
+            <div className="rounded-3xl border border-slate-800 bg-[#11151b] p-6">
               <div className="flex items-start gap-3">
-
                 <div className="text-emerald-400">
                   🔒
                 </div>
 
                 <div>
-
                   <h2 className="font-bold">
                     Secure Spin
                   </h2>
@@ -815,18 +814,13 @@ export default function SpinPage() {
                     rewards are processed securely on
                     the server.
                   </p>
-
                 </div>
-
               </div>
-
             </div>
-
 
             {/* HOW IT WORKS */}
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6">
-
+            <div className="rounded-3xl border border-slate-800 bg-[#11151b] p-6">
               <h2 className="text-lg font-bold">
                 How It Works
               </h2>
@@ -868,12 +862,10 @@ export default function SpinPage() {
                 </div>
 
               </div>
-
             </div>
 
           </div>
         </div>
-
       </div>
     </main>
   );

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import {
   ArrowLeft,
   ArrowRight,
@@ -10,15 +11,10 @@ import {
   Clock3,
   Loader2,
   RefreshCw,
-  Sparkles,
   ShieldCheck,
+  Sparkles,
   XCircle,
 } from "lucide-react";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 type Task = {
   id: string;
@@ -30,23 +26,23 @@ type Task = {
   created_at: string;
 };
 
-type Profile = {
-  plan_name: string | null;
-  daily_task_limit: number | null;
-};
-
-const PLAN_LIMITS: Record<string, number> = {
-  Starter: 10,
-  Basic: 20,
-  Pro: 30,
-  Premium: 40,
-  VIP: 50,
-};
+/*
+ * EarnNova current rule:
+ * Maximum 10 tasks per day.
+ *
+ * Task reward is intentionally NOT shown to customers.
+ * The actual reward remains server-side.
+ */
+const DAILY_TASK_LIMIT = 10;
 
 export default function TasksPage() {
+  const router = useRouter();
+  const supabase = createClient();
+
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([]);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [completedTaskIds, setCompletedTaskIds] = useState<string[]>(
+    []
+  );
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -66,59 +62,53 @@ export default function TasksPage() {
     setErrorMessage("");
 
     try {
+      /*
+       * AUTH
+       */
+
       const {
         data: { user },
         error: userError,
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
-        window.location.replace("/login");
+        router.replace("/login");
         return;
       }
 
-      // Load profile / active plan
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("plan_name, daily_task_limit")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (profileError) {
-        console.error("PROFILE ERROR:", profileError);
-      }
-
-      if (profileData) {
-        setProfile({
-          plan_name: profileData.plan_name,
-          daily_task_limit:
-            profileData.daily_task_limit ??
-            PLAN_LIMITS[profileData.plan_name || "Starter"] ??
-            10,
-        });
-      }
-
-      // Load active tasks
-      const { data: taskData, error: taskError } = await supabase
-        .from("tasks")
-        .select(
-          `
-          id,
-          title,
-          description,
-          reward,
-          task_url,
-          status,
-          created_at
-          `
-        )
-        .eq("status", "active")
-        .order("created_at", {
-          ascending: false,
-        });
+      /*
+       * LOAD ACTIVE TASKS
+       *
+       * Reward is loaded because it belongs to the task record,
+       * but it is NEVER rendered to the customer.
+       */
+      const { data: taskData, error: taskError } =
+        await supabase
+          .from("tasks")
+          .select(
+            `
+              id,
+              title,
+              description,
+              reward,
+              task_url,
+              status,
+              created_at
+            `
+          )
+          .eq("status", "active")
+          .order("created_at", {
+            ascending: false,
+          });
 
       if (taskError) {
         console.error("TASK ERROR:", taskError);
-        setErrorMessage(taskError.message || "Unable to load tasks.");
+
+        setErrorMessage(
+          taskError.message ||
+            "Unable to load tasks."
+        );
+
         return;
       }
 
@@ -129,37 +119,73 @@ export default function TasksPage() {
         }))
       );
 
-      // Load today's completed tasks.
-      // These records are only used for UI filtering.
-      // Actual duplicate protection MUST also exist server-side.
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
+      /*
+       * TODAY START
+       */
 
-      const { data: completionData, error: completionError } =
-        await supabase
-          .from("task_completions")
-          .select("task_id")
-          .eq("user_id", user.id)
-          .gte("completed_at", startOfDay.toISOString());
+      const startOfDay = new Date();
+
+      startOfDay.setHours(
+        0,
+        0,
+        0,
+        0
+      );
+
+      /*
+       * LOAD TODAY'S COMPLETED TASKS
+       *
+       * This is only for UI filtering.
+       * Server-side duplicate protection should also exist.
+       */
+      const {
+        data: completionData,
+        error: completionError,
+      } = await supabase
+        .from("task_completions")
+        .select("task_id")
+        .eq("user_id", user.id)
+        .gte(
+          "completed_at",
+          startOfDay.toISOString()
+        );
 
       if (completionError) {
-        console.error("COMPLETION ERROR:", completionError);
+        console.error(
+          "COMPLETION ERROR:",
+          completionError
+        );
       }
 
       setCompletedTaskIds(
-        (completionData || []).map((item) => String(item.task_id))
+        (completionData || []).map((item) =>
+          String(item.task_id)
+        )
       );
     } catch (error) {
-      console.error("TASK PAGE ERROR:", error);
-      setErrorMessage("Something went wrong while loading tasks.");
+      console.error(
+        "TASK PAGE ERROR:",
+        error
+      );
+
+      setErrorMessage(
+        "Something went wrong while loading tasks."
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }
 
+  /*
+   * OPEN TASK
+   *
+   * Opening a task does NOT complete it.
+   */
   function openTask(task: Task) {
-    if (!task.task_url) return;
+    if (!task.task_url) {
+      return;
+    }
 
     window.open(
       task.task_url,
@@ -168,76 +194,145 @@ export default function TasksPage() {
     );
   }
 
-  const planName = profile?.plan_name || "Starter";
+  /*
+   * AVAILABLE TASKS
+   */
 
-  const dailyLimit =
-    profile?.daily_task_limit ??
-    PLAN_LIMITS[planName] ??
-    PLAN_LIMITS.Starter;
+  const availableTasks = tasks.filter(
+    (task) =>
+      !completedTaskIds.includes(
+        String(task.id)
+      )
+  );
 
-  const availableTasks = useMemo(() => {
-    return tasks.filter(
-      (task) => !completedTaskIds.includes(String(task.id))
-    );
-  }, [tasks, completedTaskIds]);
-
-  const completedToday = completedTaskIds.length;
+  const completedToday =
+    completedTaskIds.length;
 
   const remainingToday = Math.max(
-    dailyLimit - completedToday,
+    DAILY_TASK_LIMIT - completedToday,
     0
   );
 
-  const visibleTasks = availableTasks.slice(
-    0,
-    remainingToday
-  );
+  /*
+   * Only show enough tasks to respect
+   * today's 10-task limit.
+   */
+  const visibleTasks =
+    availableTasks.slice(
+      0,
+      remainingToday
+    );
 
   return (
     <main className="min-h-screen bg-[#070b10] px-3 py-4 text-white sm:px-5 sm:py-7">
-      <div className="mx-auto w-full max-w-[570px]">
+      <div className="mx-auto w-full max-w-[620px]">
 
-        {/* HEADER */}
-        <header className="mb-5 flex items-center gap-3">
+        {/* =====================================================
+            HEADER
+        ====================================================== */}
 
-          <a
-            href="/dashboard"
+        <header className="mb-6 flex items-center gap-3">
+
+          <button
+            type="button"
+            onClick={() =>
+              router.push("/dashboard")
+            }
             aria-label="Back to Dashboard"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-[#11151b] text-slate-400 transition hover:border-blue-500/40 hover:bg-blue-500/5 hover:text-white"
+            className="
+              flex
+              h-11
+              w-11
+              shrink-0
+              items-center
+              justify-center
+              rounded-xl
+              border
+              border-slate-800
+              bg-[#11151b]
+              text-slate-400
+              transition
+              hover:border-blue-500/40
+              hover:bg-blue-500/5
+              hover:text-white
+            "
           >
             <ArrowLeft size={20} />
-          </a>
+          </button>
 
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-lg">
-            <span className="text-lg font-black italic text-slate-950">
-              E<span className="text-blue-600">N</span>
-            </span>
+          {/* MASTER EARNNOVA LOGO */}
+
+          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center">
+            <div className="absolute inset-0 rounded-[12px] bg-blue-600/20 blur-md" />
+
+            <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-[12px] border border-blue-400/20 bg-gradient-to-br from-white via-slate-100 to-blue-50 shadow-xl">
+              <div className="absolute -right-2 -top-2 h-6 w-6 rounded-full bg-blue-500/20 blur-md" />
+
+              <div className="relative flex items-center justify-center">
+                <span className="text-[17px] font-black italic tracking-[-0.15em] text-slate-950">
+                  E
+                </span>
+
+                <span className="-ml-0.5 text-[17px] font-black italic tracking-[-0.15em] text-blue-600">
+                  N
+                </span>
+              </div>
+
+              <div className="absolute bottom-1 left-1.5 h-[2px] w-4 rounded-full bg-blue-500" />
+            </div>
           </div>
 
           <div className="min-w-0">
-            <h1 className="text-lg font-extrabold">
+            <h1 className="text-lg font-black tracking-tight">
               Earn<span className="text-blue-500">Nova</span>
             </h1>
 
-            <p className="text-[9px] uppercase tracking-[0.18em] text-slate-600">
-              Tasks
+            <p className="text-[9px] font-medium uppercase tracking-[0.24em] text-slate-600">
+              Earn • Grow • Repeat
             </p>
           </div>
 
           <button
-            onClick={() => loadTasks(true)}
+            type="button"
+            onClick={() =>
+              loadTasks(true)
+            }
             disabled={refreshing}
             aria-label="Refresh tasks"
-            className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-[#11151b] text-slate-400 transition hover:border-blue-500/40 hover:text-white disabled:opacity-50"
+            className="
+              ml-auto
+              flex
+              h-10
+              w-10
+              shrink-0
+              items-center
+              justify-center
+              rounded-xl
+              border
+              border-slate-800
+              bg-[#11151b]
+              text-slate-400
+              transition
+              hover:border-blue-500/40
+              hover:text-white
+              disabled:opacity-50
+            "
           >
             <RefreshCw
               size={17}
-              className={refreshing ? "animate-spin" : ""}
+              className={
+                refreshing
+                  ? "animate-spin"
+                  : ""
+              }
             />
           </button>
         </header>
 
-        {/* PAGE TITLE */}
+        {/* =====================================================
+            PAGE TITLE
+        ====================================================== */}
+
         <section className="mb-5">
 
           <div className="flex items-center gap-3">
@@ -259,70 +354,82 @@ export default function TasksPage() {
           </div>
 
           <p className="mt-3 text-xs leading-5 text-slate-500">
-            Complete available tasks and earn rewards after
-            successful verification.
+            Complete available tasks and earn rewards
+            after successful verification.
           </p>
         </section>
 
-        {/* PLAN / DAILY LIMIT */}
-        {!loading && !errorMessage && (
-          <section className="mb-4 rounded-2xl border border-blue-500/15 bg-blue-500/[0.04] p-4">
+        {/* =====================================================
+            DAILY LIMIT
+        ====================================================== */}
 
-            <div className="flex items-center gap-3">
+        {!loading &&
+          !errorMessage && (
+            <section className="mb-4 rounded-2xl border border-blue-500/15 bg-blue-500/[0.04] p-4">
 
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
-                <ShieldCheck size={19} />
+              <div className="flex items-center gap-3">
+
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
+                  <ShieldCheck size={19} />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">
+                    Daily Task Limit
+                  </p>
+
+                  <p className="mt-0.5 text-sm font-black text-white">
+                    {DAILY_TASK_LIMIT} Tasks
+                  </p>
+                </div>
+
+                <div className="text-right">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                    Today
+                  </p>
+
+                  <p className="mt-0.5 text-sm font-black text-blue-400">
+                    {completedToday}/
+                    {DAILY_TASK_LIMIT}
+                  </p>
+                </div>
+
               </div>
 
-              <div className="min-w-0 flex-1">
-                <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">
-                  Current Plan
-                </p>
-
-                <p className="mt-0.5 text-sm font-black text-white">
-                  {planName}
-                </p>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-800">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all"
+                  style={{
+                    width: `${Math.min(
+                      (completedToday /
+                        Math.max(
+                          DAILY_TASK_LIMIT,
+                          1
+                        )) *
+                        100,
+                      100
+                    )}%`,
+                  }}
+                />
               </div>
 
-              <div className="text-right">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
-                  Today
-                </p>
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-[9px] text-slate-600">
+                  Tasks completed today
+                </span>
 
-                <p className="mt-0.5 text-sm font-black text-blue-400">
-                  {completedToday}/{dailyLimit}
-                </p>
+                <span className="text-[9px] font-bold text-slate-500">
+                  {remainingToday} remaining
+                </span>
               </div>
 
-            </div>
+            </section>
+          )}
 
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-800">
-              <div
-                className="h-full rounded-full bg-blue-500 transition-all"
-                style={{
-                  width: `${Math.min(
-                    (completedToday / Math.max(dailyLimit, 1)) *
-                      100,
-                    100
-                  )}%`,
-                }}
-              />
-            </div>
+        {/* =====================================================
+            LOADING
+        ====================================================== */}
 
-            <div className="mt-2 flex items-center justify-between">
-              <span className="text-[9px] text-slate-600">
-                Daily task limit
-              </span>
-
-              <span className="text-[9px] font-bold text-slate-500">
-                {remainingToday} remaining
-              </span>
-            </div>
-
-          </section>
-        )}
-
-        {/* LOADING */}
         {loading && (
           <div className="rounded-2xl border border-slate-800 bg-[#11151b] p-8 text-center">
 
@@ -338,33 +445,43 @@ export default function TasksPage() {
           </div>
         )}
 
-        {/* ERROR */}
-        {!loading && errorMessage && (
-          <div className="rounded-2xl border border-red-500/20 bg-[#11151b] p-6 text-center">
+        {/* =====================================================
+            ERROR
+        ====================================================== */}
 
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/10 text-red-400">
-              <XCircle size={23} />
+        {!loading &&
+          errorMessage && (
+            <div className="rounded-2xl border border-red-500/20 bg-[#11151b] p-6 text-center">
+
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/10 text-red-400">
+                <XCircle size={23} />
+              </div>
+
+              <h3 className="mt-4 text-base font-bold">
+                Unable to Load Tasks
+              </h3>
+
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                {errorMessage}
+              </p>
+
+              <button
+                type="button"
+                onClick={() =>
+                  loadTasks()
+                }
+                className="mt-5 rounded-xl bg-blue-600 px-5 py-3 text-xs font-bold text-white transition hover:bg-blue-500"
+              >
+                Try Again
+              </button>
+
             </div>
+          )}
 
-            <h3 className="mt-4 text-base font-bold">
-              Unable to Load Tasks
-            </h3>
+        {/* =====================================================
+            DAILY LIMIT REACHED
+        ====================================================== */}
 
-            <p className="mt-2 text-xs leading-5 text-slate-500">
-              {errorMessage}
-            </p>
-
-            <button
-              onClick={() => loadTasks()}
-              className="mt-5 rounded-xl bg-blue-600 px-5 py-3 text-xs font-bold text-white transition hover:bg-blue-500"
-            >
-              Try Again
-            </button>
-
-          </div>
-        )}
-
-        {/* DAILY LIMIT REACHED */}
         {!loading &&
           !errorMessage &&
           remainingToday <= 0 && (
@@ -379,15 +496,19 @@ export default function TasksPage() {
               </h3>
 
               <p className="mt-2 text-xs leading-5 text-slate-500">
-                You have completed your {dailyLimit} task
-                limit for today. More tasks will be available
-                after the daily reset.
+                You have completed your{" "}
+                {DAILY_TASK_LIMIT} tasks for today.
+                More tasks will be available after
+                the daily reset.
               </p>
 
             </div>
           )}
 
-        {/* NO TASKS */}
+        {/* =====================================================
+            NO TASKS
+        ====================================================== */}
+
         {!loading &&
           !errorMessage &&
           remainingToday > 0 &&
@@ -403,14 +524,17 @@ export default function TasksPage() {
               </h3>
 
               <p className="mt-2 text-xs leading-5 text-slate-500">
-                There are no new eligible tasks right now.
-                Please check again later.
+                There are no new eligible tasks right
+                now. Please check again later.
               </p>
 
             </div>
           )}
 
-        {/* TASK ROWS */}
+        {/* =====================================================
+            TASK LIST
+        ====================================================== */}
+
         {!loading &&
           !errorMessage &&
           remainingToday > 0 &&
@@ -420,15 +544,30 @@ export default function TasksPage() {
               {visibleTasks.map((task) => (
                 <div
                   key={task.id}
-                  className="group flex items-center gap-3 rounded-2xl border border-slate-800 bg-[#11151b] p-3.5 transition hover:border-blue-500/30 hover:bg-blue-500/[0.03]"
+                  className="
+                    group
+                    flex
+                    items-center
+                    gap-3
+                    rounded-2xl
+                    border
+                    border-slate-800
+                    bg-[#11151b]
+                    p-3.5
+                    transition
+                    hover:border-blue-500/30
+                    hover:bg-blue-500/[0.03]
+                  "
                 >
 
-                  {/* ICON */}
+                  {/* TASK ICON */}
+
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
                     <Sparkles size={20} />
                   </div>
 
-                  {/* INFO */}
+                  {/* TASK INFO */}
+
                   <div className="min-w-0 flex-1">
 
                     <h3 className="truncate text-sm font-bold text-white">
@@ -458,29 +597,30 @@ export default function TasksPage() {
 
                   </div>
 
-                  {/* REWARD */}
-                  <div className="shrink-0 text-right">
+                  {/* START BUTTON */}
 
-                    <p className="text-[8px] font-bold uppercase tracking-wider text-slate-600">
-                      Reward
-                    </p>
-
-                    <p className="mt-0.5 text-sm font-black text-green-400">
-                      +${task.reward.toFixed(2)}
-                    </p>
-
-                  </div>
-
-                  {/* START */}
                   <button
-                    onClick={() => openTask(task)}
+                    type="button"
+                    onClick={() =>
+                      openTask(task)
+                    }
                     disabled={!task.task_url}
                     aria-label={`Start ${task.title}`}
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${
-                      task.task_url
-                        ? "bg-blue-600 text-white hover:bg-blue-500"
-                        : "cursor-not-allowed bg-slate-800 text-slate-600"
-                    }`}
+                    className={`
+                      flex
+                      h-9
+                      w-9
+                      shrink-0
+                      items-center
+                      justify-center
+                      rounded-xl
+                      transition
+                      ${
+                        task.task_url
+                          ? "bg-blue-600 text-white hover:bg-blue-500"
+                          : "cursor-not-allowed bg-slate-800 text-slate-600"
+                      }
+                    `}
                   >
                     <ArrowRight size={16} />
                   </button>
@@ -491,7 +631,10 @@ export default function TasksPage() {
             </section>
           )}
 
-        {/* SECURITY INFO */}
+        {/* =====================================================
+            SECURITY INFO
+        ====================================================== */}
+
         {!loading &&
           !errorMessage &&
           visibleTasks.length > 0 && (
@@ -505,16 +648,18 @@ export default function TasksPage() {
                 />
 
                 <div>
+
                   <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-amber-400">
                     Important
                   </p>
 
                   <p className="mt-2 text-xs leading-5 text-slate-500">
-                    Complete tasks honestly. Opening a task does
-                    not automatically credit the reward. Completion
-                    is verified before the reward is added to your
+                    Opening a task does not automatically
+                    complete it. Task completion is verified
+                    before any reward is credited to your
                     wallet.
                   </p>
+
                 </div>
 
               </div>
@@ -522,7 +667,10 @@ export default function TasksPage() {
             </div>
           )}
 
-        {/* FOOTER */}
+        {/* =====================================================
+            FOOTER
+        ====================================================== */}
+
         <footer className="py-7 text-center">
 
           <p className="text-[10px] uppercase tracking-[0.18em] text-slate-700">

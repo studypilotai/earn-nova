@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
   XCircle,
@@ -11,10 +11,9 @@ import {
   ArrowLeft,
 } from "lucide-react";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { createClient } from "@/lib/supabase/client";
+
+const supabase = createClient();
 
 type Activation = {
   id: string;
@@ -29,64 +28,75 @@ type Activation = {
 };
 
 export default function AdminActivationsPage() {
-  const [activations, setActivations] = useState<Activation[]>([]);
+  const router = useRouter();
+
+  const [activations, setActivations] = useState<Activation[]>(
+    []
+  );
+
   const [loading, setLoading] = useState(true);
-  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(
+    null
+  );
+
   const [filter, setFilter] = useState("all");
+
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  useEffect(() => {
-    loadActivations();
-  }, []);
+  /* =========================================================
+     CHECK ADMIN
+     ========================================================= */
 
-  // ==============================
-  // CHECK ADMIN
-  // ==============================
-
-  async function checkAdmin() {
+  const checkAdmin = useCallback(async () => {
     const {
       data: { user },
       error: userError,
     } = await supabase.auth.getUser();
 
     if (userError || !user) {
-      window.location.replace("/admin/login");
+      router.replace("/admin/login");
       return false;
     }
 
-    const { data: profile, error: profileError } = await supabase
+    const {
+      data: profile,
+      error: profileError,
+    } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .maybeSingle();
 
     if (profileError) {
-      console.error("PROFILE ERROR:", profileError);
+      console.error(
+        "ADMIN PROFILE ERROR:",
+        profileError
+      );
 
       setErrorMessage(
-        profileError.message || "Unable to verify admin account."
+        profileError.message ||
+          "Unable to verify admin account."
       );
 
       return false;
     }
 
     if (!profile || profile.role !== "admin") {
-      window.location.replace("/dashboard");
+      router.replace("/dashboard");
       return false;
     }
 
     return true;
-  }
+  }, [router]);
 
-  // ==============================
-  // LOAD ACTIVATIONS
-  // ==============================
+  /* =========================================================
+     LOAD ACTIVATIONS
+     ========================================================= */
 
-  async function loadActivations() {
+  const loadActivations = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
-    setMessage("");
 
     try {
       const isAdmin = await checkAdmin();
@@ -95,52 +105,70 @@ export default function AdminActivationsPage() {
         return;
       }
 
-      const { data, error } = await supabase
+      const {
+        data,
+        error,
+      } = await supabase
         .from("activations")
         .select(
           `
-          id,
-          user_id,
-          amount,
-          currency,
-          payment_method,
-          payment_reference,
-          status,
-          created_at,
-          updated_at
-        `
+            id,
+            user_id,
+            amount,
+            currency,
+            payment_method,
+            payment_reference,
+            status,
+            created_at,
+            updated_at
+          `
         )
         .order("created_at", {
           ascending: false,
         });
 
       if (error) {
-        console.error("LOAD ACTIVATIONS ERROR:", error);
+        console.error(
+          "LOAD ACTIVATIONS ERROR:",
+          error
+        );
 
         setActivations([]);
 
         setErrorMessage(
-          error.message || "Unable to load activation requests."
+          error.message ||
+            "Unable to load activation requests."
         );
 
         return;
       }
 
-      const formatted: Activation[] = (data || []).map((item) => ({
+      const formatted: Activation[] = (
+        data || []
+      ).map((item) => ({
         id: String(item.id),
         user_id: String(item.user_id),
         amount: Number(item.amount ?? 0),
-        currency: String(item.currency ?? "USD"),
-        payment_method: item.payment_method ?? null,
-        payment_reference: item.payment_reference ?? null,
-        status: String(item.status ?? "pending").toLowerCase(),
+        currency: String(
+          item.currency ?? "USD"
+        ).toUpperCase(),
+        payment_method:
+          item.payment_method ?? null,
+        payment_reference:
+          item.payment_reference ?? null,
+        status: String(
+          item.status ?? "pending"
+        ).toLowerCase(),
         created_at: item.created_at,
         updated_at: item.updated_at,
       }));
 
       setActivations(formatted);
     } catch (error) {
-      console.error("LOAD ACTIVATIONS EXCEPTION:", error);
+      console.error(
+        "LOAD ACTIVATIONS EXCEPTION:",
+        error
+      );
 
       setErrorMessage(
         error instanceof Error
@@ -150,11 +178,15 @@ export default function AdminActivationsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [checkAdmin]);
 
-  // ==============================
-  // APPROVE ACTIVATION
-  // ==============================
+  useEffect(() => {
+    loadActivations();
+  }, [loadActivations]);
+
+  /* =========================================================
+     APPROVE ACTIVATION
+     ========================================================= */
 
   async function approveActivation(id: string) {
     const activation = activations.find(
@@ -162,7 +194,9 @@ export default function AdminActivationsPage() {
     );
 
     if (!activation) {
-      setErrorMessage("Activation request not found.");
+      setErrorMessage(
+        "Activation request not found."
+      );
       return;
     }
 
@@ -174,18 +208,26 @@ export default function AdminActivationsPage() {
     }
 
     const confirmed = window.confirm(
-      "Approve this activation?\n\n" +
-        "The customer's membership will be activated and the referral reward will be processed by the database function."
+      `Approve this activation?\n\n` +
+        `Amount: $${activation.amount.toFixed(
+          2
+        )} ${activation.currency}\n\n` +
+        `The customer's plan will be activated and any eligible referral reward will be processed securely by the database.`
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     setProcessingId(id);
     setMessage("");
     setErrorMessage("");
 
     try {
-      const { data, error } = await supabase.rpc(
+      const {
+        data,
+        error,
+      } = await supabase.rpc(
         "approve_activation",
         {
           p_activation_id: id,
@@ -193,44 +235,55 @@ export default function AdminActivationsPage() {
       );
 
       if (error) {
-        console.error("APPROVE ERROR:", error);
+        console.error(
+          "APPROVE ACTIVATION ERROR:",
+          error
+        );
 
         setErrorMessage(
-          error.message || "Unable to approve activation."
+          error.message ||
+            "Unable to approve activation."
         );
 
         return;
       }
 
-      if (!data) {
-        setErrorMessage(
-          "No response was returned from approval function."
-        );
+      /*
+       * RPC can return:
+       * {
+       *   success: true,
+       *   message: "...",
+       *   referrer_id: "..."
+       * }
+       */
+
+      if (
+        data &&
+        typeof data === "object" &&
+        "success" in data &&
+        data.success === false
+      ) {
+        const rpcMessage =
+          "message" in data &&
+          typeof data.message === "string"
+            ? data.message
+            : "Activation could not be approved.";
+
+        setErrorMessage(rpcMessage);
 
         return;
       }
 
-      if (data.success === false) {
-        setErrorMessage(
-          data.message || "Activation could not be approved."
-        );
-
-        return;
-      }
-
-      if (data.referrer_id) {
-        setMessage(
-          "Activation approved successfully. Referral reward released."
-        );
-      } else {
-        setMessage(
-          "Activation approved successfully."
-        );
-      }
+      setMessage(
+        "Activation approved successfully. The customer plan has been activated."
+      );
 
       await loadActivations();
     } catch (error) {
-      console.error("APPROVE EXCEPTION:", error);
+      console.error(
+        "APPROVE ACTIVATION EXCEPTION:",
+        error
+      );
 
       setErrorMessage(
         error instanceof Error
@@ -242,9 +295,9 @@ export default function AdminActivationsPage() {
     }
   }
 
-  // ==============================
-  // REJECT ACTIVATION
-  // ==============================
+  /* =========================================================
+     REJECT ACTIVATION
+     ========================================================= */
 
   async function rejectActivation(id: string) {
     const activation = activations.find(
@@ -252,7 +305,9 @@ export default function AdminActivationsPage() {
     );
 
     if (!activation) {
-      setErrorMessage("Activation request not found.");
+      setErrorMessage(
+        "Activation request not found."
+      );
       return;
     }
 
@@ -264,17 +319,31 @@ export default function AdminActivationsPage() {
     }
 
     const confirmed = window.confirm(
-      "Reject this activation request?"
+      `Reject this activation request?\n\n` +
+        `Amount: $${activation.amount.toFixed(
+          2
+        )} ${activation.currency}`
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     setProcessingId(id);
     setMessage("");
     setErrorMessage("");
 
     try {
-      const { data, error } = await supabase
+      /*
+       * Only change a request that is still pending.
+       * This prevents approving/rejecting the same request
+       * twice from the UI.
+       */
+
+      const {
+        data,
+        error,
+      } = await supabase
         .from("activations")
         .update({
           status: "rejected",
@@ -282,14 +351,20 @@ export default function AdminActivationsPage() {
         })
         .eq("id", id)
         .eq("status", "pending")
-        .select("id, status")
+        .select(
+          "id, status, updated_at"
+        )
         .maybeSingle();
 
       if (error) {
-        console.error("REJECT ERROR:", error);
+        console.error(
+          "REJECT ACTIVATION ERROR:",
+          error
+        );
 
         setErrorMessage(
-          error.message || "Unable to reject activation."
+          error.message ||
+            "Unable to reject activation."
         );
 
         return;
@@ -311,7 +386,10 @@ export default function AdminActivationsPage() {
 
       await loadActivations();
     } catch (error) {
-      console.error("REJECT EXCEPTION:", error);
+      console.error(
+        "REJECT ACTIVATION EXCEPTION:",
+        error
+      );
 
       setErrorMessage(
         error instanceof Error
@@ -323,22 +401,22 @@ export default function AdminActivationsPage() {
     }
   }
 
-  // ==============================
-  // FILTER
-  // ==============================
+  /* =========================================================
+     FILTER
+     ========================================================= */
 
   const filteredActivations =
     filter === "all"
       ? activations
       : activations.filter(
           (item) =>
-            item.status.toLowerCase() ===
+            item.status ===
             filter.toLowerCase()
         );
 
-  // ==============================
-  // COUNTS
-  // ==============================
+  /* =========================================================
+     COUNTS
+     ========================================================= */
 
   const pendingCount = activations.filter(
     (item) => item.status === "pending"
@@ -352,14 +430,14 @@ export default function AdminActivationsPage() {
     (item) => item.status === "rejected"
   ).length;
 
-  // ==============================
-  // STATUS STYLE
-  // ==============================
+  /* =========================================================
+     STATUS STYLE
+     ========================================================= */
 
   function statusClass(status: string) {
     switch (status.toLowerCase()) {
       case "approved":
-        return "bg-green-100 text-green-700";
+        return "bg-emerald-100 text-emerald-700";
 
       case "rejected":
         return "bg-red-100 text-red-700";
@@ -370,38 +448,53 @@ export default function AdminActivationsPage() {
     }
   }
 
-  // ==============================
-  // DATE
-  // ==============================
+  /* =========================================================
+     DATE
+     ========================================================= */
 
-  function formatDate(date: string) {
-    try {
-      return new Date(date).toLocaleString();
-    } catch {
+  function formatDate(
+    date: string | null | undefined
+  ) {
+    if (!date) {
       return "—";
     }
+
+    const parsed = new Date(date);
+
+    if (Number.isNaN(parsed.getTime())) {
+      return "—";
+    }
+
+    return parsed.toLocaleString();
   }
 
-  // ==============================
-  // UI
-  // ==============================
+  /* =========================================================
+     UI
+     ========================================================= */
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
 
-        {/* HEADER */}
+        {/* =====================================================
+            HEADER
+            ===================================================== */}
+
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <a
-              href="/admin"
+            <button
+              type="button"
+              onClick={() =>
+                router.push("/admin")
+              }
               className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-50"
+              aria-label="Back to admin dashboard"
             >
               <ArrowLeft size={18} />
-            </a>
+            </button>
 
             <div>
-              <h1 className="text-2xl font-black">
+              <h1 className="text-2xl font-black tracking-tight">
                 Activations
               </h1>
 
@@ -412,20 +505,28 @@ export default function AdminActivationsPage() {
           </div>
 
           <button
+            type="button"
             onClick={loadActivations}
             disabled={loading}
             className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RefreshCw
               size={16}
-              className={loading ? "animate-spin" : ""}
+              className={
+                loading
+                  ? "animate-spin"
+                  : ""
+              }
             />
 
             Refresh
           </button>
         </div>
 
-        {/* STATS */}
+        {/* =====================================================
+            STATS
+            ===================================================== */}
+
         <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -448,12 +549,12 @@ export default function AdminActivationsPage() {
             </p>
           </div>
 
-          <div className="rounded-2xl border border-green-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wider text-green-500">
+          <div className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wider text-emerald-500">
               Approved
             </p>
 
-            <p className="mt-2 text-2xl font-black text-green-600">
+            <p className="mt-2 text-2xl font-black text-emerald-600">
               {approvedCount}
             </p>
           </div>
@@ -470,43 +571,70 @@ export default function AdminActivationsPage() {
 
         </div>
 
-        {/* FILTERS */}
+        {/* =====================================================
+            FILTERS
+            ===================================================== */}
+
         <div className="mb-4 flex flex-wrap gap-2">
           {[
             ["all", "All"],
             ["pending", "Pending"],
             ["approved", "Approved"],
             ["rejected", "Rejected"],
-          ].map(([value, label]) => (
-            <button
-              key={value}
-              onClick={() => setFilter(value)}
-              className={`rounded-xl px-4 py-2 text-xs font-bold transition ${
-                filter === value
-                  ? "bg-blue-600 text-white"
-                  : "border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+          ].map(
+            ([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() =>
+                  setFilter(value)
+                }
+                className={`rounded-xl px-4 py-2 text-xs font-bold transition ${
+                  filter === value
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                }`}
+              >
+                {label}
+              </button>
+            )
+          )}
         </div>
 
-        {/* SUCCESS */}
+        {/* =====================================================
+            SUCCESS MESSAGE
+            ===================================================== */}
+
         {message && (
-          <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">
-            {message}
+          <div className="mb-4 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+            <CheckCircle2
+              size={18}
+              className="mt-0.5 shrink-0"
+            />
+
+            <span>{message}</span>
           </div>
         )}
 
-        {/* ERROR */}
+        {/* =====================================================
+            ERROR MESSAGE
+            ===================================================== */}
+
         {errorMessage && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-            {errorMessage}
+          <div className="mb-4 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+            <XCircle
+              size={18}
+              className="mt-0.5 shrink-0"
+            />
+
+            <span>{errorMessage}</span>
           </div>
         )}
 
-        {/* LOADING */}
+        {/* =====================================================
+            LOADING
+            ===================================================== */}
+
         {loading && (
           <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
             <Loader2
@@ -520,359 +648,423 @@ export default function AdminActivationsPage() {
           </div>
         )}
 
-        {/* EMPTY */}
-        {!loading && filteredActivations.length === 0 && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
-            <Clock3
-              size={32}
-              className="mx-auto text-slate-300"
-            />
+        {/* =====================================================
+            EMPTY
+            ===================================================== */}
 
-            <h2 className="mt-4 text-base font-bold">
-              No Activation Requests
-            </h2>
+        {!loading &&
+          filteredActivations.length === 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+              <Clock3
+                size={32}
+                className="mx-auto text-slate-300"
+              />
 
-            <p className="mt-1 text-sm text-slate-400">
-              There are no requests in this category.
-            </p>
-          </div>
-        )}
+              <h2 className="mt-4 text-base font-bold">
+                No Activation Requests
+              </h2>
 
-        {/* DESKTOP TABLE */}
-        {!loading && filteredActivations.length > 0 && (
-          <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:block">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
+              <p className="mt-1 text-sm text-slate-400">
+                There are no requests in this
+                category.
+              </p>
+            </div>
+          )}
 
-                <thead className="border-b border-slate-200 bg-slate-50">
-                  <tr>
-                    <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                      User ID
-                    </th>
+        {/* =====================================================
+            DESKTOP TABLE
+            ===================================================== */}
 
-                    <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Amount
-                    </th>
+        {!loading &&
+          filteredActivations.length > 0 && (
+            <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:block">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
 
-                    <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Payment
-                    </th>
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
+                        User ID
+                      </th>
 
-                    <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Reference
-                    </th>
+                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Amount
+                      </th>
 
-                    <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Status
-                    </th>
+                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Payment
+                      </th>
 
-                    <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Date
-                    </th>
+                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Reference
+                      </th>
 
-                    <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
+                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Status
+                      </th>
 
-                <tbody className="divide-y divide-slate-100">
+                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Date
+                      </th>
 
-                  {filteredActivations.map((activation) => (
-                    <tr
-                      key={activation.id}
-                      className="transition hover:bg-slate-50"
-                    >
+                      <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredActivations.map(
+                      (activation) => (
+                        <tr
+                          key={activation.id}
+                          className="transition hover:bg-slate-50"
+                        >
+
+                          {/* USER */}
+
+                          <td className="px-5 py-4">
+                            <p
+                              title={
+                                activation.user_id
+                              }
+                              className="max-w-[180px] truncate font-mono text-xs text-slate-600"
+                            >
+                              {
+                                activation.user_id
+                              }
+                            </p>
+                          </td>
+
+                          {/* AMOUNT */}
+
+                          <td className="px-5 py-4">
+                            <p className="font-black">
+                              $
+                              {activation.amount.toFixed(
+                                2
+                              )}
+                            </p>
+
+                            <p className="text-[10px] uppercase text-slate-400">
+                              {
+                                activation.currency
+                              }
+                            </p>
+                          </td>
+
+                          {/* PAYMENT */}
+
+                          <td className="px-5 py-4 text-sm font-semibold text-slate-700">
+                            {activation.payment_method ||
+                              "—"}
+                          </td>
+
+                          {/* REFERENCE */}
+
+                          <td className="px-5 py-4">
+                            <p
+                              title={
+                                activation.payment_reference ||
+                                ""
+                              }
+                              className="max-w-[160px] truncate font-mono text-xs text-slate-500"
+                            >
+                              {activation.payment_reference ||
+                                "—"}
+                            </p>
+                          </td>
+
+                          {/* STATUS */}
+
+                          <td className="px-5 py-4">
+                            <span
+                              className={`inline-flex rounded-full px-3 py-1 text-[10px] font-bold uppercase ${statusClass(
+                                activation.status
+                              )}`}
+                            >
+                              {
+                                activation.status
+                              }
+                            </span>
+                          </td>
+
+                          {/* DATE */}
+
+                          <td className="px-5 py-4 text-xs text-slate-500">
+                            {formatDate(
+                              activation.created_at
+                            )}
+                          </td>
+
+                          {/* ACTION */}
+
+                          <td className="px-5 py-4">
+                            {activation.status ===
+                            "pending" ? (
+                              <div className="flex justify-end gap-2">
+
+                                <button
+                                  type="button"
+                                  disabled={
+                                    processingId ===
+                                    activation.id
+                                  }
+                                  onClick={() =>
+                                    approveActivation(
+                                      activation.id
+                                    )
+                                  }
+                                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {processingId ===
+                                  activation.id ? (
+                                    <Loader2
+                                      size={14}
+                                      className="animate-spin"
+                                    />
+                                  ) : (
+                                    <CheckCircle2
+                                      size={14}
+                                    />
+                                  )}
+
+                                  Approve
+                                </button>
+
+                                <button
+                                  type="button"
+                                  disabled={
+                                    processingId ===
+                                    activation.id
+                                  }
+                                  onClick={() =>
+                                    rejectActivation(
+                                      activation.id
+                                    )
+                                  }
+                                  className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  <XCircle
+                                    size={14}
+                                  />
+
+                                  Reject
+                                </button>
+
+                              </div>
+                            ) : (
+                              <div className="text-right text-xs font-semibold text-slate-400">
+                                Processed
+                              </div>
+                            )}
+                          </td>
+
+                        </tr>
+                      )
+                    )}
+                  </tbody>
+
+                </table>
+              </div>
+            </div>
+          )}
+
+        {/* =====================================================
+            MOBILE CARDS
+            ===================================================== */}
+
+        {!loading &&
+          filteredActivations.length > 0 && (
+            <div className="space-y-3 md:hidden">
+              {filteredActivations.map(
+                (activation) => (
+                  <div
+                    key={activation.id}
+                    className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                  >
+
+                    {/* TOP */}
+
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                          Activation
+                        </p>
+
+                        <p className="mt-1 text-lg font-black">
+                          $
+                          {activation.amount.toFixed(
+                            2
+                          )}
+                        </p>
+
+                        <p className="text-[10px] uppercase text-slate-400">
+                          {
+                            activation.currency
+                          }
+                        </p>
+                      </div>
+
+                      <span
+                        className={`rounded-full px-3 py-1 text-[9px] font-bold uppercase ${statusClass(
+                          activation.status
+                        )}`}
+                      >
+                        {
+                          activation.status
+                        }
+                      </span>
+                    </div>
+
+                    {/* DETAILS */}
+
+                    <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
 
                       {/* USER */}
-                      <td className="px-5 py-4">
-                        <p
-                          title={activation.user_id}
-                          className="max-w-[180px] truncate font-mono text-xs text-slate-600"
+
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-xs text-slate-400">
+                          User
+                        </span>
+
+                        <span
+                          title={
+                            activation.user_id
+                          }
+                          className="max-w-[220px] truncate text-right font-mono text-[10px] text-slate-600"
                         >
-                          {activation.user_id}
-                        </p>
-                      </td>
-
-                      {/* AMOUNT */}
-                      <td className="px-5 py-4">
-                        <p className="font-black">
-                          $
-                          {activation.amount.toFixed(2)}
-                        </p>
-
-                        <p className="text-[10px] text-slate-400">
-                          {activation.currency}
-                        </p>
-                      </td>
+                          {
+                            activation.user_id
+                          }
+                        </span>
+                      </div>
 
                       {/* PAYMENT */}
-                      <td className="px-5 py-4 text-sm font-semibold">
-                        {activation.payment_method || "—"}
-                      </td>
+
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-xs text-slate-400">
+                          Payment
+                        </span>
+
+                        <span className="text-right text-xs font-semibold text-slate-700">
+                          {activation.payment_method ||
+                            "—"}
+                        </span>
+                      </div>
 
                       {/* REFERENCE */}
-                      <td className="px-5 py-4">
-                        <p
+
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-xs text-slate-400">
+                          Reference
+                        </span>
+
+                        <span
                           title={
                             activation.payment_reference ||
                             ""
                           }
-                          className="max-w-[160px] truncate font-mono text-xs text-slate-500"
+                          className="max-w-[180px] truncate text-right font-mono text-[10px] text-slate-600"
                         >
-                          {activation.payment_reference || "—"}
-                        </p>
-                      </td>
-
-                      {/* STATUS */}
-                      <td className="px-5 py-4">
-                        <span
-                          className={`inline-flex rounded-full px-3 py-1 text-[10px] font-bold uppercase ${statusClass(
-                            activation.status
-                          )}`}
-                        >
-                          {activation.status}
+                          {activation.payment_reference ||
+                            "—"}
                         </span>
-                      </td>
+                      </div>
 
-                      {/* DATE */}
-                      <td className="px-5 py-4 text-xs text-slate-500">
-                        {formatDate(
-                          activation.created_at
-                        )}
-                      </td>
+                      {/* CREATED */}
 
-                      {/* ACTION */}
-                      <td className="px-5 py-4">
-                        {activation.status === "pending" ? (
-                          <div className="flex justify-end gap-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-xs text-slate-400">
+                          Submitted
+                        </span>
 
-                            <button
-                              disabled={
-                                processingId ===
-                                activation.id
-                              }
-                              onClick={() =>
-                                approveActivation(
-                                  activation.id
-                                )
-                              }
-                              className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {processingId ===
-                              activation.id ? (
-                                <Loader2
-                                  size={14}
-                                  className="animate-spin"
-                                />
-                              ) : (
-                                <CheckCircle2
-                                  size={14}
-                                />
-                              )}
+                        <span className="text-right text-[10px] text-slate-500">
+                          {formatDate(
+                            activation.created_at
+                          )}
+                        </span>
+                      </div>
 
-                              Approve
-                            </button>
+                      {/* UPDATED */}
 
-                            <button
-                              disabled={
-                                processingId ===
-                                activation.id
-                              }
-                              onClick={() =>
-                                rejectActivation(
-                                  activation.id
-                                )
-                              }
-                              className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <XCircle size={14} />
+                      {activation.status !==
+                        "pending" && (
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-xs text-slate-400">
+                            Updated
+                          </span>
 
-                              Reject
-                            </button>
-
-                          </div>
-                        ) : (
-                          <div className="text-right text-xs font-semibold text-slate-400">
-                            No action
-                          </div>
-                        )}
-                      </td>
-
-                    </tr>
-                  ))}
-
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* MOBILE */}
-        {!loading && filteredActivations.length > 0 && (
-          <div className="space-y-3 md:hidden">
-
-            {filteredActivations.map((activation) => (
-              <div
-                key={activation.id}
-                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-              >
-
-                {/* TOP */}
-                <div className="flex items-start justify-between gap-3">
-
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Activation
-                    </p>
-
-                    <p className="mt-1 text-lg font-black">
-                      ${activation.amount.toFixed(2)}
-                    </p>
-
-                    <p className="text-[10px] text-slate-400">
-                      {activation.currency}
-                    </p>
-                  </div>
-
-                  <span
-                    className={`rounded-full px-3 py-1 text-[9px] font-bold uppercase ${statusClass(
-                      activation.status
-                    )}`}
-                  >
-                    {activation.status}
-                  </span>
-
-                </div>
-
-                {/* DETAILS */}
-                <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
-
-                  {/* USER */}
-                  <div className="flex justify-between gap-3">
-                    <span className="text-xs text-slate-400">
-                      User
-                    </span>
-
-                    <span
-                      title={activation.user_id}
-                      className="max-w-[220px] truncate font-mono text-[10px] text-slate-600"
-                    >
-                      {activation.user_id}
-                    </span>
-                  </div>
-
-                  {/* PAYMENT */}
-                  <div className="flex justify-between gap-3">
-                    <span className="text-xs text-slate-400">
-                      Payment
-                    </span>
-
-                    <span className="text-right text-xs font-semibold">
-                      {activation.payment_method ||
-                        "—"}
-                    </span>
-                  </div>
-
-                  {/* REFERENCE */}
-                  <div className="flex justify-between gap-3">
-                    <span className="text-xs text-slate-400">
-                      Reference
-                    </span>
-
-                    <span
-                      title={
-                        activation.payment_reference ||
-                        ""
-                      }
-                      className="max-w-[180px] truncate font-mono text-[10px] text-slate-600"
-                    >
-                      {activation.payment_reference ||
-                        "—"}
-                    </span>
-                  </div>
-
-                  {/* CREATED */}
-                  <div className="flex justify-between gap-3">
-                    <span className="text-xs text-slate-400">
-                      Submitted
-                    </span>
-
-                    <span className="text-right text-[10px] text-slate-500">
-                      {formatDate(
-                        activation.created_at
+                          <span className="text-right text-[10px] text-slate-500">
+                            {formatDate(
+                              activation.updated_at
+                            )}
+                          </span>
+                        </div>
                       )}
-                    </span>
-                  </div>
 
-                  {/* UPDATED */}
-                  {activation.status !== "pending" && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-xs text-slate-400">
-                        Updated
-                      </span>
-
-                      <span className="text-right text-[10px] text-slate-500">
-                        {formatDate(
-                          activation.updated_at
-                        )}
-                      </span>
                     </div>
-                  )}
 
-                </div>
+                    {/* ACTIONS */}
 
-                {/* ACTIONS */}
-                {activation.status === "pending" && (
-                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    {activation.status ===
+                      "pending" && (
+                      <div className="mt-4 grid grid-cols-2 gap-2">
 
-                    <button
-                      disabled={
-                        processingId === activation.id
-                      }
-                      onClick={() =>
-                        approveActivation(
-                          activation.id
-                        )
-                      }
-                      className="flex items-center justify-center gap-1.5 rounded-xl bg-green-600 py-3 text-xs font-bold text-white transition hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {processingId === activation.id ? (
-                        <Loader2
-                          size={14}
-                          className="animate-spin"
-                        />
-                      ) : (
-                        <CheckCircle2 size={14} />
-                      )}
+                        <button
+                          type="button"
+                          disabled={
+                            processingId ===
+                            activation.id
+                          }
+                          onClick={() =>
+                            approveActivation(
+                              activation.id
+                            )
+                          }
+                          className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-3 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {processingId ===
+                          activation.id ? (
+                            <Loader2
+                              size={14}
+                              className="animate-spin"
+                            />
+                          ) : (
+                            <CheckCircle2
+                              size={14}
+                            />
+                          )}
 
-                      Approve
-                    </button>
+                          Approve
+                        </button>
 
-                    <button
-                      disabled={
-                        processingId === activation.id
-                      }
-                      onClick={() =>
-                        rejectActivation(
-                          activation.id
-                        )
-                      }
-                      className="flex items-center justify-center gap-1.5 rounded-xl bg-red-600 py-3 text-xs font-bold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <XCircle size={14} />
+                        <button
+                          type="button"
+                          disabled={
+                            processingId ===
+                            activation.id
+                          }
+                          onClick={() =>
+                            rejectActivation(
+                              activation.id
+                            )
+                          }
+                          className="flex items-center justify-center gap-1.5 rounded-xl bg-red-600 py-3 text-xs font-bold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <XCircle size={14} />
 
-                      Reject
-                    </button>
+                          Reject
+                        </button>
+
+                      </div>
+                    )}
 
                   </div>
-                )}
-
-              </div>
-            ))}
-
-          </div>
-        )}
+                )
+              )}
+            </div>
+          )}
 
       </div>
     </main>
