@@ -116,19 +116,6 @@ export default function RootLayout({
           name="apple-mobile-web-app-title"
           content="EarnNova"
         />
-
-        {/* Monetag Verification */}
-        <meta
-          name="monetag"
-          content="f9854282bc585f9099661e567a00b86f"
-        />
-
-        {/* Monetag Vignette Banner */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(s){s.dataset.zone='11796985',s.src='https://n6wxm.com/vignette.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))`,
-          }}
-        />
       </head>
 
       <body className="min-h-screen bg-[#050b16] text-white antialiased">

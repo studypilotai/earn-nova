@@ -2,7 +2,6 @@
 
 import {
   useEffect,
-  useRef,
   useState,
 } from "react";
 import type {
@@ -69,9 +68,6 @@ const ACTIVE_PLANS = new Set([
 ]);
 
 export default function DashboardPage() {
-  const adContainerRef =
-    useRef<HTMLDivElement | null>(null);
-
   const [profile, setProfile] =
     useState<Profile | null>(null);
 
@@ -92,56 +88,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadProfile();
-  }, []);
-
-  /* =========================================================
-     MONETAG VIGNETTE AD
-     
-     Dedicated dashboard location.
-     No Multitag / Push / In-Page Push / OnClick code here.
-  ========================================================= */
-
-  useEffect(() => {
-    const container =
-      adContainerRef.current;
-
-    if (!container) {
-      return;
-    }
-
-    if (
-      container.querySelector(
-        "script[data-earnnova-vignette]"
-      )
-    ) {
-      return;
-    }
-
-    const script =
-      document.createElement("script");
-
-    script.dataset.earnnovaVignette =
-      "true";
-
-    script.textContent = `
-      (function(s){
-        s.dataset.zone='11796985';
-        s.src='https://n6wxm.com/vignette.min.js';
-      })(
-        [document.documentElement, document.body]
-          .filter(Boolean)
-          .pop()
-          .appendChild(
-            document.createElement('script')
-          )
-      );
-    `;
-
-    container.appendChild(script);
-
-    return () => {
-      script.remove();
-    };
   }, []);
 
   /* =========================================================
@@ -1009,19 +955,6 @@ export default function DashboardPage() {
             />
           </div>
         </section>
-
-        {/* =================================================
-            MONETAG AD
-        ================================================= */}
-
-        <div
-          ref={adContainerRef}
-          className="my-5 flex min-h-[70px] w-full items-center justify-center overflow-hidden rounded-2xl border border-slate-800/60 bg-[#0b0f14]"
-        >
-          <span className="text-[8px] font-medium uppercase tracking-[0.18em] text-slate-700">
-            Advertisement
-          </span>
-        </div>
 
         {/* =================================================
             TODAY
