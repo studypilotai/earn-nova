@@ -957,6 +957,15 @@ export default function DashboardPage() {
         </section>
 
         {/* =================================================
+            SPECIAL AD CONTAINER
+            AFTER ALL QUICK ACCESS BUTTONS
+        ================================================= */}
+
+        <section className="mt-5">
+          <AdSlot />
+        </section>
+
+        {/* =================================================
             TODAY
         ================================================= */}
 
@@ -1307,6 +1316,46 @@ export default function DashboardPage() {
           </div>
         )}
     </main>
+  );
+}
+
+/* =========================================================
+   EARNNOVA AD SLOT
+   SPECIAL CONTAINER
+========================================================= */
+
+function AdSlot() {
+  return (
+    <div className="relative w-full overflow-hidden rounded-[22px] border border-slate-800/90 bg-gradient-to-br from-[#10161e] via-[#0d1218] to-[#0a0f15] shadow-xl">
+      
+      {/* Subtle background glow */}
+      <div className="pointer-events-none absolute -right-16 -top-16 h-32 w-32 rounded-full bg-blue-500/[0.05] blur-3xl" />
+
+      <div className="pointer-events-none absolute -bottom-16 -left-16 h-32 w-32 rounded-full bg-cyan-400/[0.03] blur-3xl" />
+
+      <div className="relative flex min-h-[120px] w-full items-center justify-center px-5 py-6">
+        <div className="w-full text-center">
+
+          {/* Advertisement label */}
+          <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-slate-800 bg-[#080c11] px-3 py-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
+
+            <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-slate-600">
+              Advertisement
+            </span>
+          </div>
+
+          <p className="mt-3 text-[10px] font-semibold text-slate-700">
+            Sponsored content
+          </p>
+
+          <p className="mt-1 text-[8px] uppercase tracking-[0.16em] text-slate-800">
+            EarnNova
+          </p>
+
+        </div>
+      </div>
+    </div>
   );
 }
 

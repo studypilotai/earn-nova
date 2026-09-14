@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Script from "next/script";
 
 /* =========================================================
    ICONS
@@ -89,7 +90,7 @@ function ShieldIcon() {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6-8 10-8 10Z" />
       <path d="m9 12 2 2 4-4" />
     </svg>
   );
@@ -295,16 +296,26 @@ export default function Home() {
             </a>
           </div>
 
-          {/* MOBILE MENU BUTTON */}
+          {/* MOBILE ACTIONS */}
 
-          <button
-            type="button"
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="rounded-xl border border-white/10 bg-white/[0.04] p-2 text-slate-300 md:hidden"
-            aria-label="Toggle menu"
-          >
-            {menuOpen ? <CloseIcon /> : <MenuIcon />}
-          </button>
+          <div className="flex items-center gap-2 md:hidden">
+            <a
+              href="/login"
+              className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-bold text-slate-200 transition hover:border-blue-500/30 hover:bg-white/[0.07] hover:text-white"
+            >
+              Login
+            </a>
+
+            <button
+              type="button"
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="rounded-xl border border-white/10 bg-white/[0.04] p-2 text-slate-300 transition hover:bg-white/[0.07] hover:text-white"
+              aria-label="Toggle menu"
+              aria-expanded={menuOpen}
+            >
+              {menuOpen ? <CloseIcon /> : <MenuIcon />}
+            </button>
+          </div>
         </div>
 
         {/* MOBILE MENU */}
@@ -330,17 +341,9 @@ export default function Home() {
 
               <div className="mt-2 border-t border-white/[0.07] pt-4">
                 <a
-                  href="/login"
-                  onClick={() => setMenuOpen(false)}
-                  className="block py-2 font-semibold text-slate-300"
-                >
-                  Login
-                </a>
-
-                <a
                   href="/signup"
                   onClick={() => setMenuOpen(false)}
-                  className="mt-2 block rounded-xl bg-blue-600 px-5 py-3 text-center font-bold text-white"
+                  className="block rounded-xl bg-blue-600 px-5 py-3 text-center font-bold text-white transition hover:bg-blue-500"
                 >
                   Get Started
                 </a>
@@ -645,6 +648,30 @@ export default function Home() {
               </p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* =====================================================
+          NATIVE AD
+          Platform Highlights ke baad / Features se pehle
+      ===================================================== */}
+
+      <section className="bg-[#05080d] px-5 py-8 lg:px-8">
+        <div className="mx-auto max-w-5xl">
+          <div className="overflow-hidden rounded-2xl border border-white/[0.05] bg-[#090e15] p-3 sm:p-4">
+            <div className="mb-2 text-center text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-700">
+              Sponsored
+            </div>
+
+            <Script
+              async
+              data-cfasync="false"
+              src="https://pl31341532.profitableratecpmnetwork.com/2e5cb783eb96596fb0946fc664ed4bb8/invoke.js"
+              strategy="afterInteractive"
+            />
+
+            <div id="container-2e5cb783eb96596fb0946fc664ed4bb8" />
+          </div>
         </div>
       </section>
 
