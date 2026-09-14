@@ -122,6 +122,13 @@ export default function RootLayout({
           name="monetag"
           content="f9854282bc585f9099661e567a00b86f"
         />
+
+        {/* Monetag Vignette Banner */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(s){s.dataset.zone='11796941',s.src='https://nap5k.com/tag.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))`,
+          }}
+        />
       </head>
 
       <body className="min-h-screen bg-[#050b16] text-white antialiased">
