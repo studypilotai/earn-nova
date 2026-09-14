@@ -23,7 +23,7 @@ const supabase = createClient();
 
 const USD_TO_PKR = 285;
 
-const BANK_ACCOUNT = "Bank Transfer";
+const BANK_ACCOUNT = "JazzCash";
 const BANK_ACCOUNT_TITLE = "MUHAMMAD ABDULLAH";
 const BANK_IBAN = "PK38JCMA2710923339830897";
 
@@ -337,11 +337,13 @@ function formatUsd(value: number) {
 export default function ActivatePage() {
   const router = useRouter();
 
-  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [selectedPlan, setSelectedPlan] =
+    useState<Plan | null>(null);
 
   const [country, setCountry] = useState("");
 
-  const [method, setMethod] = useState<"bank" | "crypto" | "">("");
+  const [method, setMethod] =
+    useState<"bank" | "crypto" | "">("");
 
   const [senderName, setSenderName] = useState("");
   const [senderNumber, setSenderNumber] = useState("");
@@ -435,16 +437,6 @@ export default function ActivatePage() {
 
       setSelectedPlan(finalPlan);
 
-      /*
-       * Existing activation ko sirf display ke liye load kar rahe hain.
-       *
-       * Important:
-       * Yahan approved/pending activation ki wajah se
-       * dashboard redirect nahi hoga.
-       *
-       * Is se plan select karne ke baad activation page
-       * properly open rahega.
-       */
       const {
         data: latestActivation,
         error: activationError,
@@ -493,7 +485,6 @@ export default function ActivatePage() {
     }
 
     if (isPakistan && method === "crypto") {
-      // Pakistan ke liye sirf bank transfer.
       setMethod("bank");
     }
   }, [isPakistan, method]);
@@ -539,12 +530,12 @@ export default function ActivatePage() {
     }
 
     /*
-     * Pakistan = Bank Transfer only
+     * Pakistan = JazzCash only
      * International = USDT TRC20 only
      */
     if (isPakistan && method !== "bank") {
       setError(
-        "Pakistan users ke liye sirf Bank Transfer available hai."
+        "Pakistan users ke liye sirf JazzCash available hai."
       );
       return;
     }
@@ -564,7 +555,7 @@ export default function ActivatePage() {
 
       if (!senderNumber.trim()) {
         setError(
-          "Sender bank / mobile number enter karein."
+          "Sender JazzCash number enter karein."
         );
         return;
       }
@@ -592,12 +583,6 @@ export default function ActivatePage() {
         return;
       }
 
-      /*
-       * Existing pending activation check.
-       *
-       * Pending request milne par dashboard par redirect nahi
-       * karna. User ko activation page par hi rehna hai.
-       */
       const {
         data: pendingActivation,
         error: pendingError,
@@ -639,13 +624,9 @@ export default function ActivatePage() {
       }
 
       /*
-       * Starter PKR discount:
-       *
-       * Normal:
+       * Starter:
        * $2.50 × 285 = Rs. 712.50
-       *
-       * Discounted:
-       * Rs. 710
+       * Discounted Pakistan price = Rs. 710
        *
        * Database amount USD mein hi rahega.
        */
@@ -655,7 +636,7 @@ export default function ActivatePage() {
         currency: "USD",
         payment_method:
           method === "bank"
-            ? "Bank Transfer"
+            ? "JazzCash"
             : "USDT TRC20",
         payment_reference: trxId.trim(),
         status: "pending",
@@ -709,10 +690,6 @@ export default function ActivatePage() {
 
       setActivation(data as Activation);
 
-      /*
-       * Activation submit ke baad dashboard par direct redirect
-       * nahi karna. User activation page par hi rahega.
-       */
       setError(
         "Activation request successfully submit ho gayi hai. EarnNova Team verification ke baad account activate karegi."
       );
@@ -1009,7 +986,7 @@ export default function ActivatePage() {
                   </label>
 
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {/* BANK TRANSFER */}
+                    {/* JAZZCASH */}
                     {isPakistan && (
                       <button
                         type="button"
@@ -1029,11 +1006,11 @@ export default function ActivatePage() {
 
                           <div>
                             <p className="text-sm font-bold text-white">
-                              Bank Transfer
+                              JazzCash
                             </p>
 
                             <p className="text-xs text-slate-500">
-                              Pakistan only
+                              Only available for Pakistan
                             </p>
                           </div>
                         </div>
@@ -1062,10 +1039,6 @@ export default function ActivatePage() {
                             <p className="text-sm font-bold text-white">
                               USDT TRC20
                             </p>
-
-                            <p className="text-xs text-slate-500">
-                              International only
-                            </p>
                           </div>
                         </div>
                       </button>
@@ -1074,13 +1047,13 @@ export default function ActivatePage() {
                 </div>
               )}
 
-              {/* BANK PAYMENT */}
+              {/* JAZZCASH PAYMENT */}
               {method === "bank" &&
                 isPakistan && (
                   <div className="space-y-4 rounded-2xl border border-blue-500/10 bg-blue-500/[0.04] p-4">
                     <div>
                       <p className="mb-3 text-sm font-black text-white">
-                        Bank Transfer Payment
+                        JazzCash Payment
                       </p>
 
                       <div className="space-y-3">
@@ -1106,11 +1079,11 @@ export default function ActivatePage() {
                           </p>
                         </div>
 
-                        {/* IBAN */}
+                        {/* ACCOUNT NUMBER */}
                         <div className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-black/20 p-3">
                           <div className="min-w-0">
                             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                              IBAN
+                              JazzCash Number
                             </p>
 
                             <p className="mt-1 break-all text-sm font-bold text-white">
@@ -1160,7 +1133,7 @@ export default function ActivatePage() {
                     {/* SENDER NUMBER */}
                     <div>
                       <label className="mb-2 block text-sm font-bold text-slate-200">
-                        Sender Bank / Mobile
+                        Sender JazzCash Number
                       </label>
 
                       <input
@@ -1171,7 +1144,7 @@ export default function ActivatePage() {
                             e.target.value
                           )
                         }
-                        placeholder="Bank account / mobile number"
+                        placeholder="Sender JazzCash number"
                         className="h-12 w-full rounded-xl border border-white/10 bg-[#07101f] px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
                       />
                     </div>
@@ -1179,57 +1152,58 @@ export default function ActivatePage() {
                 )}
 
               {/* CRYPTO PAYMENT */}
-              {method === "crypto" && !isPakistan && (
-                <div className="space-y-4 rounded-2xl border border-cyan-500/10 bg-cyan-500/[0.04] p-4">
-                  <div>
-                    <p className="text-sm font-black text-white">
-                      USDT TRC20 Payment
-                    </p>
-
-                    <p className="mt-1 text-xs leading-5 text-slate-500">
-                      Sirf USDT TRC20 network use
-                      karein.
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-white/5 bg-black/20 p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                      USDT TRC20 Wallet
-                    </p>
-
-                    <div className="mt-2 flex items-start gap-3">
-                      <p className="min-w-0 flex-1 break-all text-xs font-bold leading-5 text-white">
-                        TAWgQk5vdz964jxps2nYjTAj6c8WRpp4hb
+              {method === "crypto" &&
+                !isPakistan && (
+                  <div className="space-y-4 rounded-2xl border border-cyan-500/10 bg-cyan-500/[0.04] p-4">
+                    <div>
+                      <p className="text-sm font-black text-white">
+                        USDT TRC20 Payment
                       </p>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyText(
-                            "TAWgQk5vdz964jxps2nYjTAj6c8WRpp4hb",
-                            "crypto"
-                          )
-                        }
-                        className="shrink-0 rounded-lg border border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white"
-                      >
-                        {copied === "crypto" ? (
-                          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </button>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        Sirf USDT TRC20 network use
+                        karein.
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-white/5 bg-black/20 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                        USDT TRC20 Wallet
+                      </p>
+
+                      <div className="mt-2 flex items-start gap-3">
+                        <p className="min-w-0 flex-1 break-all text-xs font-bold leading-5 text-white">
+                          TAWgQk5vdz964jxps2nYjTAj6c8WRpp4hb
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            copyText(
+                              "TAWgQk5vdz964jxps2nYjTAj6c8WRpp4hb",
+                              "crypto"
+                            )
+                          }
+                          className="shrink-0 rounded-lg border border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white"
+                        >
+                          {copied === "crypto" ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-amber-500/10 bg-amber-500/5 p-3">
+                      <p className="text-xs leading-5 text-amber-300">
+                        Network carefully check karein.
+                        TRC20 ke ilawa kisi network par
+                        payment na bhejein.
+                      </p>
                     </div>
                   </div>
-
-                  <div className="rounded-xl border border-amber-500/10 bg-amber-500/5 p-3">
-                    <p className="text-xs leading-5 text-amber-300">
-                      Network carefully check karein.
-                      TRC20 ke ilawa kisi network par
-                      payment na bhejein.
-                    </p>
-                  </div>
-                </div>
-              )}
+                )}
 
               {/* TRANSACTION ID */}
               {method && (
@@ -1250,7 +1224,7 @@ export default function ActivatePage() {
                       placeholder={
                         method === "crypto"
                           ? "Enter your TXID"
-                          : "Enter transaction reference"
+                          : "Enter JazzCash transaction reference"
                       }
                       className="h-12 w-full rounded-xl border border-white/10 bg-[#07101f] px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
                     />
