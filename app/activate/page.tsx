@@ -21,11 +21,11 @@ import {
 
 const supabase = createClient();
 
-const USD_TO_PKR = 288;
+const USD_TO_PKR = 285;
 
-const JAZZCASH_ACCOUNT = "JazzCash";
-const JAZZCASH_ACCOUNT_TITLE = "MUHAMMAD ABDULLAH";
-const JAZZCASH_IBAN = "PK38JCMA2710923339830897";
+const BANK_ACCOUNT = "Bank Transfer";
+const BANK_ACCOUNT_TITLE = "MUHAMMAD ABDULLAH";
+const BANK_IBAN = "PK38JCMA2710923339830897";
 
 type Plan = {
   name: string;
@@ -90,6 +90,202 @@ const PLANS: Plan[] = [
     dailyTasks: 10,
     dailyVideos: 50,
   },
+];
+
+const COUNTRIES = [
+  "Afghanistan",
+  "Albania",
+  "Algeria",
+  "Andorra",
+  "Angola",
+  "Antigua and Barbuda",
+  "Argentina",
+  "Armenia",
+  "Australia",
+  "Austria",
+  "Azerbaijan",
+  "Bahamas",
+  "Bahrain",
+  "Bangladesh",
+  "Barbados",
+  "Belarus",
+  "Belgium",
+  "Belize",
+  "Benin",
+  "Bhutan",
+  "Bolivia",
+  "Bosnia and Herzegovina",
+  "Botswana",
+  "Brazil",
+  "Brunei",
+  "Bulgaria",
+  "Burkina Faso",
+  "Burundi",
+  "Cambodia",
+  "Cameroon",
+  "Canada",
+  "Cape Verde",
+  "Central African Republic",
+  "Chad",
+  "Chile",
+  "China",
+  "Colombia",
+  "Comoros",
+  "Congo",
+  "Costa Rica",
+  "Croatia",
+  "Cuba",
+  "Cyprus",
+  "Czech Republic",
+  "Denmark",
+  "Djibouti",
+  "Dominica",
+  "Dominican Republic",
+  "Ecuador",
+  "Egypt",
+  "El Salvador",
+  "Equatorial Guinea",
+  "Eritrea",
+  "Estonia",
+  "Eswatini",
+  "Ethiopia",
+  "Fiji",
+  "Finland",
+  "France",
+  "Gabon",
+  "Gambia",
+  "Georgia",
+  "Germany",
+  "Ghana",
+  "Greece",
+  "Grenada",
+  "Guatemala",
+  "Guinea",
+  "Guinea-Bissau",
+  "Guyana",
+  "Haiti",
+  "Honduras",
+  "Hungary",
+  "Iceland",
+  "India",
+  "Indonesia",
+  "Iran",
+  "Iraq",
+  "Ireland",
+  "Italy",
+  "Jamaica",
+  "Japan",
+  "Jordan",
+  "Kazakhstan",
+  "Kenya",
+  "Kiribati",
+  "Kuwait",
+  "Kyrgyzstan",
+  "Laos",
+  "Latvia",
+  "Lebanon",
+  "Lesotho",
+  "Liberia",
+  "Libya",
+  "Liechtenstein",
+  "Lithuania",
+  "Luxembourg",
+  "Madagascar",
+  "Malawi",
+  "Malaysia",
+  "Maldives",
+  "Mali",
+  "Malta",
+  "Marshall Islands",
+  "Mauritania",
+  "Mauritius",
+  "Mexico",
+  "Micronesia",
+  "Moldova",
+  "Monaco",
+  "Mongolia",
+  "Montenegro",
+  "Morocco",
+  "Mozambique",
+  "Myanmar",
+  "Namibia",
+  "Nauru",
+  "Nepal",
+  "Netherlands",
+  "New Zealand",
+  "Nicaragua",
+  "Niger",
+  "Nigeria",
+  "North Korea",
+  "North Macedonia",
+  "Norway",
+  "Oman",
+  "Pakistan",
+  "Palau",
+  "Palestine",
+  "Panama",
+  "Papua New Guinea",
+  "Paraguay",
+  "Peru",
+  "Philippines",
+  "Poland",
+  "Portugal",
+  "Qatar",
+  "Romania",
+  "Russia",
+  "Rwanda",
+  "Saint Kitts and Nevis",
+  "Saint Lucia",
+  "Saint Vincent and the Grenadines",
+  "Samoa",
+  "San Marino",
+  "Sao Tome and Principe",
+  "Saudi Arabia",
+  "Senegal",
+  "Serbia",
+  "Seychelles",
+  "Sierra Leone",
+  "Singapore",
+  "Slovakia",
+  "Slovenia",
+  "Solomon Islands",
+  "Somalia",
+  "South Africa",
+  "South Korea",
+  "South Sudan",
+  "Spain",
+  "Sri Lanka",
+  "Sudan",
+  "Suriname",
+  "Sweden",
+  "Switzerland",
+  "Syria",
+  "Taiwan",
+  "Tajikistan",
+  "Tanzania",
+  "Thailand",
+  "Timor-Leste",
+  "Togo",
+  "Tonga",
+  "Trinidad and Tobago",
+  "Tunisia",
+  "Turkey",
+  "Turkmenistan",
+  "Tuvalu",
+  "Uganda",
+  "Ukraine",
+  "United Arab Emirates",
+  "United Kingdom",
+  "United States",
+  "Uruguay",
+  "Uzbekistan",
+  "Vanuatu",
+  "Vatican City",
+  "Venezuela",
+  "Vietnam",
+  "Yemen",
+  "Zambia",
+  "Zimbabwe",
 ];
 
 function LogoMark() {
@@ -167,6 +363,19 @@ export default function ActivatePage() {
   const pkrAmount = useMemo(() => {
     if (!selectedPlan) return 0;
 
+    const normalAmount =
+      selectedPlan.totalPrice * USD_TO_PKR;
+
+    if (selectedPlan.name === "Starter") {
+      return 710;
+    }
+
+    return normalAmount;
+  }, [selectedPlan]);
+
+  const normalPkrAmount = useMemo(() => {
+    if (!selectedPlan) return 0;
+
     return selectedPlan.totalPrice * USD_TO_PKR;
   }, [selectedPlan]);
 
@@ -226,6 +435,16 @@ export default function ActivatePage() {
 
       setSelectedPlan(finalPlan);
 
+      /*
+       * Existing activation ko sirf display ke liye load kar rahe hain.
+       *
+       * Important:
+       * Yahan approved/pending activation ki wajah se
+       * dashboard redirect nahi hoga.
+       *
+       * Is se plan select karne ke baad activation page
+       * properly open rahega.
+       */
       const {
         data: latestActivation,
         error: activationError,
@@ -249,18 +468,9 @@ export default function ActivatePage() {
       }
 
       if (latestActivation) {
-        setActivation(latestActivation as Activation);
-
-        if (latestActivation.status === "approved") {
-          localStorage.setItem(
-            "earnNovaActivation",
-            JSON.stringify(latestActivation)
-          );
-
-          router.replace("/dashboard");
-          router.refresh();
-          return;
-        }
+        setActivation(
+          latestActivation as Activation
+        );
       }
     } catch (err) {
       console.error(err);
@@ -280,6 +490,11 @@ export default function ActivatePage() {
   useEffect(() => {
     if (!isPakistan && method === "bank") {
       setMethod("crypto");
+    }
+
+    if (isPakistan && method === "crypto") {
+      // Pakistan ke liye sirf bank transfer.
+      setMethod("bank");
     }
   }, [isPakistan, method]);
 
@@ -323,14 +538,20 @@ export default function ActivatePage() {
       return;
     }
 
-    if (!method) {
-      setError("Payment method select karein.");
+    /*
+     * Pakistan = Bank Transfer only
+     * International = USDT TRC20 only
+     */
+    if (isPakistan && method !== "bank") {
+      setError(
+        "Pakistan users ke liye sirf Bank Transfer available hai."
+      );
       return;
     }
 
-    if (method === "bank" && !isPakistan) {
+    if (!isPakistan && method !== "crypto") {
       setError(
-        "JazzCash payment sirf Pakistan ke liye available hai."
+        "International users ke liye sirf USDT TRC20 available hai."
       );
       return;
     }
@@ -343,7 +564,7 @@ export default function ActivatePage() {
 
       if (!senderNumber.trim()) {
         setError(
-          "Sender JazzCash / mobile number enter karein."
+          "Sender bank / mobile number enter karein."
         );
         return;
       }
@@ -373,6 +594,9 @@ export default function ActivatePage() {
 
       /*
        * Existing pending activation check.
+       *
+       * Pending request milne par dashboard par redirect nahi
+       * karna. User ko activation page par hi rehna hai.
        */
       const {
         data: pendingActivation,
@@ -407,16 +631,23 @@ export default function ActivatePage() {
           JSON.stringify(pendingActivation)
         );
 
-        router.replace("/dashboard");
-        router.refresh();
+        setError(
+          "Aapki activation request already pending hai. EarnNova Team verification complete karegi."
+        );
+
         return;
       }
 
       /*
-       * Keep database field compatible with
-       * existing activations table.
+       * Starter PKR discount:
        *
-       * Customer UI shows JazzCash.
+       * Normal:
+       * $2.50 × 285 = Rs. 712.50
+       *
+       * Discounted:
+       * Rs. 710
+       *
+       * Database amount USD mein hi rahega.
        */
       const activationData = {
         user_id: user.id,
@@ -478,8 +709,13 @@ export default function ActivatePage() {
 
       setActivation(data as Activation);
 
-      router.replace("/dashboard");
-      router.refresh();
+      /*
+       * Activation submit ke baad dashboard par direct redirect
+       * nahi karna. User activation page par hi rahega.
+       */
+      setError(
+        "Activation request successfully submit ho gayi hai. EarnNova Team verification ke baad account activate karegi."
+      );
 
       return;
     } catch (err) {
@@ -575,7 +811,7 @@ export default function ActivatePage() {
         </div>
 
         {error && (
-          <div className="mb-6 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-300">
+          <div className="mb-6 rounded-2xl border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm font-medium text-blue-300">
             {error}
           </div>
         )}
@@ -614,10 +850,34 @@ export default function ActivatePage() {
                 </span>
               </div>
 
-              <p className="mt-2 text-xs text-slate-500">
-                Approx. Rs.{" "}
-                {pkrAmount.toLocaleString()} PKR
-              </p>
+              {isPakistan &&
+                selectedPlan.name === "Starter" && (
+                  <div className="mt-3">
+                    <p className="text-xs text-slate-500 line-through">
+                      Normal: Rs.{" "}
+                      {normalPkrAmount.toLocaleString(
+                        undefined,
+                        {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }
+                      )}
+                    </p>
+
+                    <p className="mt-1 text-sm font-bold text-emerald-400">
+                      Discounted: Rs.{" "}
+                      {pkrAmount.toLocaleString()} PKR
+                    </p>
+                  </div>
+                )}
+
+              {isPakistan &&
+                selectedPlan.name !== "Starter" && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Approx. Rs.{" "}
+                    {pkrAmount.toLocaleString()} PKR
+                  </p>
+                )}
             </div>
 
             <div className="mt-5 space-y-3">
@@ -707,9 +967,19 @@ export default function ActivatePage() {
 
                 <select
                   value={country}
-                  onChange={(e) =>
-                    setCountry(e.target.value)
-                  }
+                  onChange={(e) => {
+                    const value = e.target.value;
+
+                    setCountry(value);
+
+                    if (value === "Pakistan") {
+                      setMethod("bank");
+                    } else if (value) {
+                      setMethod("crypto");
+                    } else {
+                      setMethod("");
+                    }
+                  }}
                   className="h-12 w-full rounded-xl border border-white/10 bg-[#07101f] px-4 text-sm text-white outline-none transition focus:border-blue-500"
                 >
                   <option
@@ -719,19 +989,15 @@ export default function ActivatePage() {
                     Select country
                   </option>
 
-                  <option
-                    value="Pakistan"
-                    className="bg-[#07101f]"
-                  >
-                    Pakistan
-                  </option>
-
-                  <option
-                    value="Other"
-                    className="bg-[#07101f]"
-                  >
-                    Other Country
-                  </option>
+                  {COUNTRIES.map((item) => (
+                    <option
+                      key={item}
+                      value={item}
+                      className="bg-[#07101f]"
+                    >
+                      {item}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -743,7 +1009,7 @@ export default function ActivatePage() {
                   </label>
 
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {/* JAZZCASH */}
+                    {/* BANK TRANSFER */}
                     {isPakistan && (
                       <button
                         type="button"
@@ -763,7 +1029,7 @@ export default function ActivatePage() {
 
                           <div>
                             <p className="text-sm font-bold text-white">
-                              JazzCash
+                              Bank Transfer
                             </p>
 
                             <p className="text-xs text-slate-500">
@@ -775,44 +1041,46 @@ export default function ActivatePage() {
                     )}
 
                     {/* CRYPTO */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setMethod("crypto")
-                      }
-                      className={`rounded-2xl border p-4 text-left transition ${
-                        method === "crypto"
-                          ? "border-blue-500 bg-blue-500/10"
-                          : "border-white/10 bg-black/10 hover:border-white/20"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="rounded-xl bg-cyan-500/10 p-2.5 text-cyan-400">
-                          <Wallet className="h-5 w-5" />
-                        </div>
+                    {!isPakistan && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setMethod("crypto")
+                        }
+                        className={`rounded-2xl border p-4 text-left transition ${
+                          method === "crypto"
+                            ? "border-blue-500 bg-blue-500/10"
+                            : "border-white/10 bg-black/10 hover:border-white/20"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="rounded-xl bg-cyan-500/10 p-2.5 text-cyan-400">
+                            <Wallet className="h-5 w-5" />
+                          </div>
 
-                        <div>
-                          <p className="text-sm font-bold text-white">
-                            USDT TRC20
-                          </p>
+                          <div>
+                            <p className="text-sm font-bold text-white">
+                              USDT TRC20
+                            </p>
 
-                          <p className="text-xs text-slate-500">
-                            Available worldwide
-                          </p>
+                            <p className="text-xs text-slate-500">
+                              International only
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* JAZZCASH PAYMENT */}
+              {/* BANK PAYMENT */}
               {method === "bank" &&
                 isPakistan && (
                   <div className="space-y-4 rounded-2xl border border-blue-500/10 bg-blue-500/[0.04] p-4">
                     <div>
                       <p className="mb-3 text-sm font-black text-white">
-                        JazzCash Payment
+                        Bank Transfer Payment
                       </p>
 
                       <div className="space-y-3">
@@ -823,7 +1091,7 @@ export default function ActivatePage() {
                           </p>
 
                           <p className="mt-1 text-sm font-bold text-white">
-                            {JAZZCASH_ACCOUNT}
+                            {BANK_ACCOUNT}
                           </p>
                         </div>
 
@@ -834,7 +1102,7 @@ export default function ActivatePage() {
                           </p>
 
                           <p className="mt-1 text-sm font-bold text-white">
-                            {JAZZCASH_ACCOUNT_TITLE}
+                            {BANK_ACCOUNT_TITLE}
                           </p>
                         </div>
 
@@ -846,7 +1114,7 @@ export default function ActivatePage() {
                             </p>
 
                             <p className="mt-1 break-all text-sm font-bold text-white">
-                              {JAZZCASH_IBAN}
+                              {BANK_IBAN}
                             </p>
                           </div>
 
@@ -854,14 +1122,13 @@ export default function ActivatePage() {
                             type="button"
                             onClick={() =>
                               copyText(
-                                JAZZCASH_IBAN,
-                                "jazzcash"
+                                BANK_IBAN,
+                                "bank"
                               )
                             }
                             className="shrink-0 rounded-lg border border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white"
                           >
-                            {copied ===
-                            "jazzcash" ? (
+                            {copied === "bank" ? (
                               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                             ) : (
                               <Copy className="h-4 w-4" />
@@ -893,7 +1160,7 @@ export default function ActivatePage() {
                     {/* SENDER NUMBER */}
                     <div>
                       <label className="mb-2 block text-sm font-bold text-slate-200">
-                        Sender JazzCash / Mobile
+                        Sender Bank / Mobile
                       </label>
 
                       <input
@@ -904,7 +1171,7 @@ export default function ActivatePage() {
                             e.target.value
                           )
                         }
-                        placeholder="JazzCash mobile number"
+                        placeholder="Bank account / mobile number"
                         className="h-12 w-full rounded-xl border border-white/10 bg-[#07101f] px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
                       />
                     </div>
@@ -912,7 +1179,7 @@ export default function ActivatePage() {
                 )}
 
               {/* CRYPTO PAYMENT */}
-              {method === "crypto" && (
+              {method === "crypto" && !isPakistan && (
                 <div className="space-y-4 rounded-2xl border border-cyan-500/10 bg-cyan-500/[0.04] p-4">
                   <div>
                     <p className="text-sm font-black text-white">
@@ -945,8 +1212,7 @@ export default function ActivatePage() {
                         }
                         className="shrink-0 rounded-lg border border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white"
                       >
-                        {copied ===
-                        "crypto" ? (
+                        {copied === "crypto" ? (
                           <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                         ) : (
                           <Copy className="h-4 w-4" />

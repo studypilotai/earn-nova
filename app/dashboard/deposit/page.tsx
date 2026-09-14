@@ -29,7 +29,7 @@ const BANK_NAME = "JazzCash";
 const ACCOUNT_TITLE = "MUHAMMAD ABDULLAH";
 const ACCOUNT_NUMBER = "PK38JCMA2710923339830897";
 
-const USD_TO_PKR = 288;
+const USD_TO_PKR = 285;
 
 export default function DepositPage() {
   const router = useRouter();
@@ -546,6 +546,7 @@ export default function DepositPage() {
             </p>
 
             <div className="mt-5 grid gap-3">
+
               {/* USDT */}
 
               <button
@@ -568,10 +569,6 @@ export default function DepositPage() {
                     <div>
                       <p className="font-semibold">
                         USDT TRC20
-                      </p>
-
-                      <p className="text-xs text-slate-500">
-                        Available internationally
                       </p>
                     </div>
                   </div>
@@ -607,7 +604,7 @@ export default function DepositPage() {
                       </p>
 
                       <p className="text-xs text-slate-500">
-                        Pakistan only
+                        Only available for Pakistan
                       </p>
                     </div>
                   </div>
