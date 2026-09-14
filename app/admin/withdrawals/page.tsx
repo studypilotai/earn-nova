@@ -17,7 +17,11 @@ import {
 
 const supabase = createClient();
 
-const WITHDRAWAL_FEE_PERCENT = 5;
+const WITHDRAWAL_FEE_PERCENT = 10;
+const PROCESSING_TIME = "5–7 business days";
+
+const ADMIN_APPROVED_NOTE = "Approved by EarnNova Team";
+const ADMIN_REJECTED_NOTE = "Rejected by EarnNova Team";
 
 type Withdrawal = {
   id: string;
@@ -26,7 +30,7 @@ type Withdrawal = {
   amount: number;
   fee: number;
   net_amount: number;
-  status: string;
+  status: "pending" | "approved" | "rejected" | string;
   admin_note: string | null;
   created_at: string;
   updated_at?: string;
@@ -56,19 +60,52 @@ type FilterType =
   | "approved"
   | "rejected";
 
+type RpcResult = {
+  success?: boolean;
+  message?: string;
+  status?: string;
+  amount?: number;
+  fee?: number;
+  net_amount?: number;
+  restored_amount?: number;
+};
+
+function getRpcResult(data: unknown): RpcResult | null {
+  if (!data) return null;
+
+  if (Array.isArray(data)) {
+    return (data[0] as RpcResult) || null;
+  }
+
+  if (typeof data === "object") {
+    return data as RpcResult;
+  }
+
+  return null;
+}
+
 export default function WithdrawalsPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
-  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const [withdrawals, setWithdrawals] = useState<
+    Withdrawal[]
+  >([]);
+
   const [profiles, setProfiles] = useState<
     Record<string, Profile>
   >({});
+
   const [accounts, setAccounts] = useState<
     Record<string, WithdrawalAccount>
   >({});
-  const [processing, setProcessing] =
-    useState<string | null>(null);
+
+  const [processing, setProcessing] = useState<
+    string | null
+  >(null);
+
   const [filter, setFilter] =
     useState<FilterType>("all");
 
@@ -90,12 +127,14 @@ export default function WithdrawalsPage() {
         return;
       }
 
-      const { data: profile, error: profileError } =
-        await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .single();
+      const {
+        data: profile,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
 
       if (
         profileError ||
@@ -103,13 +142,18 @@ export default function WithdrawalsPage() {
         profile.role !== "admin"
       ) {
         await supabase.auth.signOut();
+
+        try {
+          localStorage.clear();
+        } catch {}
+
         router.replace("/admin/login");
         return;
       }
 
       await loadWithdrawals();
     } catch (error) {
-      console.error("Admin check error:", error);
+      console.error("Admin verification error:", error);
       alert("Unable to verify admin access.");
     } finally {
       setLoading(false);
@@ -118,13 +162,26 @@ export default function WithdrawalsPage() {
 
   async function loadWithdrawals() {
     try {
+      setRefreshing(true);
+
       const {
         data: withdrawalData,
         error: withdrawalError,
       } = await supabase
         .from("withdrawals")
         .select(
-          "id,user_id,withdrawal_account_id,amount,fee,net_amount,status,admin_note,created_at,updated_at"
+          [
+            "id",
+            "user_id",
+            "withdrawal_account_id",
+            "amount",
+            "fee",
+            "net_amount",
+            "status",
+            "admin_note",
+            "created_at",
+            "updated_at",
+          ].join(",")
         )
         .order("created_at", {
           ascending: false,
@@ -135,6 +192,7 @@ export default function WithdrawalsPage() {
           "Withdrawals error:",
           withdrawalError
         );
+
         alert(withdrawalError.message);
         return;
       }
@@ -151,18 +209,17 @@ export default function WithdrawalsPage() {
       }
 
       /*
-       * -----------------------------------------------------
-       * LOAD PROFILES SEPARATELY
-       * -----------------------------------------------------
-       * This avoids relying on Supabase relationships between
-       * withdrawals and profiles.
+       * Load related records separately.
+       *
+       * This intentionally avoids relying on Supabase
+       * relationship/schema-cache joins.
        */
 
       const userIds = Array.from(
         new Set(
-          withdrawalRows.map(
-            (withdrawal) => withdrawal.user_id
-          )
+          withdrawalRows
+            .map((item) => item.user_id)
+            .filter(Boolean)
         )
       );
 
@@ -170,8 +227,8 @@ export default function WithdrawalsPage() {
         new Set(
           withdrawalRows
             .map(
-              (withdrawal) =>
-                withdrawal.withdrawal_account_id
+              (item) =>
+                item.withdrawal_account_id
             )
             .filter(
               (id): id is string => Boolean(id)
@@ -179,40 +236,52 @@ export default function WithdrawalsPage() {
         )
       );
 
-      const [
-        { data: profileData, error: profileError },
-        { data: accountData, error: accountError },
-      ] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select(
-            "id,full_name,email,phone,wallet"
-          )
-          .in("id", userIds),
+      const profilePromise = supabase
+        .from("profiles")
+        .select(
+          "id,full_name,email,phone,wallet"
+        )
+        .in("id", userIds);
 
+      const accountPromise =
         accountIds.length > 0
           ? supabase
               .from("withdrawal_accounts")
               .select(
-                "id,user_id,method,account_name,account_number,wallet_address,bank_name"
+                [
+                  "id",
+                  "user_id",
+                  "method",
+                  "account_name",
+                  "account_number",
+                  "wallet_address",
+                  "bank_name",
+                ].join(",")
               )
               .in("id", accountIds)
           : Promise.resolve({
               data: [],
               error: null,
-            }),
+            });
+
+      const [
+        { data: profileData, error: profileError },
+        { data: accountData, error: accountError },
+      ] = await Promise.all([
+        profilePromise,
+        accountPromise,
       ]);
 
       if (profileError) {
         console.error(
-          "Profiles error:",
+          "Profiles loading error:",
           profileError
         );
       }
 
       if (accountError) {
         console.error(
-          "Withdrawal accounts error:",
+          "Withdrawal accounts loading error:",
           accountError
         );
       }
@@ -222,20 +291,24 @@ export default function WithdrawalsPage() {
         Profile
       > = {};
 
-      (profileData || []).forEach((profile) => {
-        profileMap[profile.id] =
-          profile as Profile;
-      });
+      (profileData || []).forEach(
+        (profile: Profile) => {
+          profileMap[profile.id] =
+            profile as Profile;
+        }
+      );
 
       const accountMap: Record<
         string,
         WithdrawalAccount
       > = {};
 
-      (accountData || []).forEach((account) => {
-        accountMap[account.id] =
-          account as WithdrawalAccount;
-      });
+      (accountData || []).forEach(
+        (account: WithdrawalAccount) => {
+          accountMap[account.id] =
+            account as WithdrawalAccount;
+        }
+      );
 
       setProfiles(profileMap);
       setAccounts(accountMap);
@@ -244,32 +317,51 @@ export default function WithdrawalsPage() {
         "Load withdrawals error:",
         error
       );
+
       alert("Failed to load withdrawals.");
+    } finally {
+      setRefreshing(false);
     }
   }
 
   async function approveWithdrawal(
     withdrawal: Withdrawal
   ) {
+    if (processing) return;
+
+    if (withdrawal.status !== "pending") {
+      alert(
+        "This withdrawal has already been processed."
+      );
+      return;
+    }
+
     const customer =
       profiles[withdrawal.user_id];
 
-    const confirmed = confirm(
+    const amount = Number(
+      withdrawal.amount
+    );
+
+    const fee = Number(withdrawal.fee);
+
+    const netAmount = Number(
+      withdrawal.net_amount
+    );
+
+    const confirmed = window.confirm(
       `Approve this withdrawal?\n\n` +
         `Customer: ${
           customer?.full_name ||
           customer?.email ||
           "Customer"
         }\n` +
-        `Amount: $${Number(
-          withdrawal.amount
-        ).toFixed(2)}\n` +
-        `Fee: $${Number(
-          withdrawal.fee
-        ).toFixed(2)}\n` +
-        `Customer receives: $${Number(
-          withdrawal.net_amount
-        ).toFixed(2)}`
+        `Amount: $${amount.toFixed(2)}\n` +
+        `Fee: $${fee.toFixed(2)}\n` +
+        `Customer receives: $${netAmount.toFixed(
+          2
+        )}\n\n` +
+        `The customer's wallet will NOT be deducted again.`
     );
 
     if (!confirmed) return;
@@ -277,28 +369,32 @@ export default function WithdrawalsPage() {
     setProcessing(withdrawal.id);
 
     try {
-      const { data, error } =
-        await supabase.rpc(
-          "admin_approve_withdrawal",
-          {
-            p_withdrawal_id: withdrawal.id,
-            p_admin_note:
-              "Approved by EarnNova Team",
-          }
-        );
+      const {
+        data,
+        error,
+      } = await supabase.rpc(
+        "admin_approve_withdrawal",
+        {
+          p_withdrawal_id: withdrawal.id,
+          p_admin_note: ADMIN_APPROVED_NOTE,
+        }
+      );
 
       if (error) {
         console.error(
           "Approve withdrawal error:",
           error
         );
+
         alert(error.message);
         return;
       }
 
-      if (!data?.success) {
+      const result = getRpcResult(data);
+
+      if (!result?.success) {
         alert(
-          data?.message ||
+          result?.message ||
             "Withdrawal approval failed."
         );
         return;
@@ -311,7 +407,7 @@ export default function WithdrawalsPage() {
                 ...item,
                 status: "approved",
                 admin_note:
-                  "Approved by EarnNova Team",
+                  ADMIN_APPROVED_NOTE,
                 updated_at:
                   new Date().toISOString(),
               }
@@ -321,17 +417,18 @@ export default function WithdrawalsPage() {
 
       alert(
         `Withdrawal approved successfully.\n\n` +
-          `Customer receives: $${Number(
-            withdrawal.net_amount
-          ).toFixed(2)}`
+          `Customer receives: $${netAmount.toFixed(
+            2
+          )}`
       );
     } catch (error) {
       console.error(
-        "Approve withdrawal error:",
+        "Approve withdrawal exception:",
         error
       );
+
       alert(
-        "Something went wrong while approving."
+        "Something went wrong while approving the withdrawal."
       );
     } finally {
       setProcessing(null);
@@ -341,17 +438,28 @@ export default function WithdrawalsPage() {
   async function rejectWithdrawal(
     withdrawal: Withdrawal
   ) {
+    if (processing) return;
+
+    if (withdrawal.status !== "pending") {
+      alert(
+        "This withdrawal has already been processed."
+      );
+      return;
+    }
+
     const customer =
       profiles[withdrawal.user_id];
 
-    const reason = prompt(
+    const reason = window.prompt(
       "Enter rejection reason (optional):",
       ""
     );
 
     if (reason === null) return;
 
-    const confirmed = confirm(
+    const cleanReason = reason.trim();
+
+    const confirmed = window.confirm(
       `Reject this withdrawal?\n\n` +
         `Customer: ${
           customer?.full_name ||
@@ -361,9 +469,7 @@ export default function WithdrawalsPage() {
         `Amount: $${Number(
           withdrawal.amount
         ).toFixed(2)}\n\n` +
-        `The full $${Number(
-          withdrawal.amount
-        ).toFixed(2)} will be restored to the customer's wallet.`
+        `The full requested amount will be restored to the customer's wallet.`
     );
 
     if (!confirmed) return;
@@ -372,30 +478,35 @@ export default function WithdrawalsPage() {
 
     try {
       const note =
-        reason.trim() ||
-        "Rejected by EarnNova Team";
+        cleanReason ||
+        ADMIN_REJECTED_NOTE;
 
-      const { data, error } =
-        await supabase.rpc(
-          "admin_reject_withdrawal",
-          {
-            p_withdrawal_id: withdrawal.id,
-            p_admin_note: note,
-          }
-        );
+      const {
+        data,
+        error,
+      } = await supabase.rpc(
+        "admin_reject_withdrawal",
+        {
+          p_withdrawal_id: withdrawal.id,
+          p_admin_note: note,
+        }
+      );
 
       if (error) {
         console.error(
           "Reject withdrawal error:",
           error
         );
+
         alert(error.message);
         return;
       }
 
-      if (!data?.success) {
+      const result = getRpcResult(data);
+
+      if (!result?.success) {
         alert(
-          data?.message ||
+          result?.message ||
             "Withdrawal rejection failed."
         );
         return;
@@ -415,18 +526,26 @@ export default function WithdrawalsPage() {
         )
       );
 
+      const restoredAmount =
+        Number(
+          result.restored_amount ??
+            withdrawal.amount
+        );
+
       alert(
-        `Withdrawal rejected.\n\n$${Number(
-          withdrawal.amount
-        ).toFixed(2)} has been restored to the customer's wallet.`
+        `Withdrawal rejected successfully.\n\n` +
+          `$${restoredAmount.toFixed(
+            2
+          )} has been restored to the customer's wallet.`
       );
     } catch (error) {
       console.error(
-        "Reject withdrawal error:",
+        "Reject withdrawal exception:",
         error
       );
+
       alert(
-        "Something went wrong while rejecting."
+        "Something went wrong while rejecting the withdrawal."
       );
     } finally {
       setProcessing(null);
@@ -444,28 +563,49 @@ export default function WithdrawalsPage() {
     );
   }, [withdrawals, filter]);
 
-  const counts = {
-    all: withdrawals.length,
+  const counts = useMemo(
+    () => ({
+      all: withdrawals.length,
 
-    pending: withdrawals.filter(
-      (item) => item.status === "pending"
-    ).length,
+      pending: withdrawals.filter(
+        (item) =>
+          item.status === "pending"
+      ).length,
 
-    approved: withdrawals.filter(
-      (item) => item.status === "approved"
-    ).length,
+      approved: withdrawals.filter(
+        (item) =>
+          item.status === "approved"
+      ).length,
 
-    rejected: withdrawals.filter(
-      (item) => item.status === "rejected"
-    ).length,
-  };
+      rejected: withdrawals.filter(
+        (item) =>
+          item.status === "rejected"
+      ).length,
+    }),
+    [withdrawals]
+  );
+
+  const pendingAmount = useMemo(
+    () =>
+      withdrawals
+        .filter(
+          (item) =>
+            item.status === "pending"
+        )
+        .reduce(
+          (total, item) =>
+            total + Number(item.amount || 0),
+          0
+        ),
+    [withdrawals]
+  );
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-100">
-        <div className="flex items-center gap-3 text-slate-600">
+      <div className="flex min-h-screen items-center justify-center bg-[#050b16] text-white">
+        <div className="flex items-center gap-3 text-slate-300">
           <RefreshCw
-            className="h-5 w-5 animate-spin"
+            className="h-5 w-5 animate-spin text-cyan-400"
           />
           Loading Withdrawals...
         </div>
@@ -474,121 +614,165 @@ export default function WithdrawalsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-100">
-      {/* =====================================================
-          HEADER
-      ====================================================== */}
+    <main className="min-h-screen bg-[#050b16] text-white">
+      {/* HEADER */}
 
-      <header className="border-b border-slate-200 bg-white">
-        <div className="flex min-h-20 flex-col gap-4 px-5 py-4 md:flex-row md:items-center md:justify-between md:px-8">
-          <div className="flex items-center gap-4">
+      <header className="border-b border-white/10 bg-[#07101f]/95">
+        <div className="flex min-h-20 flex-col gap-4 px-4 py-4 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+          <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={() =>
                 router.push("/admin")
               }
-              className="rounded-xl border border-slate-200 p-2.5 transition hover:bg-slate-50"
+              className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-slate-300 transition hover:bg-white/10 hover:text-white"
               title="Back to Dashboard"
             >
               <ArrowLeft size={18} />
             </button>
 
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">
+              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
                 Withdrawals
               </h1>
 
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-400">
                 Manage customer withdrawal requests
               </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={loadWithdrawals}
-            className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            disabled={refreshing}
+            className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw size={16} />
+            <RefreshCw
+              size={16}
+              className={
+                refreshing
+                  ? "animate-spin"
+                  : ""
+              }
+            />
             Refresh
           </button>
         </div>
       </header>
 
-      <div className="p-5 md:p-8">
-        {/* =====================================================
-            FEE CARD
-        ====================================================== */}
+      <div className="p-4 sm:p-6 lg:p-8">
+        {/* SUMMARY */}
 
-        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <SummaryCard
+            label="Total Requests"
+            value={counts.all}
+            icon={<Wallet size={18} />}
+          />
+
+          <SummaryCard
+            label="Pending"
+            value={counts.pending}
+            icon={<Clock size={18} />}
+          />
+
+          <SummaryCard
+            label="Approved"
+            value={counts.approved}
+            icon={
+              <CheckCircle size={18} />
+            }
+          />
+
+          <SummaryCard
+            label="Pending Amount"
+            value={`$${pendingAmount.toFixed(
+              2
+            )}`}
+            icon={<Wallet size={18} />}
+          />
+        </div>
+
+        {/* FEE CARD */}
+
+        <div className="mb-6 rounded-2xl border border-cyan-400/10 bg-[#0a1527] p-5 shadow-xl shadow-black/10">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-400">
                 Withdrawal Fee
               </p>
 
-              <p className="mt-1 text-2xl font-bold text-slate-900">
+              <p className="mt-1 text-3xl font-bold text-white">
                 {WITHDRAWAL_FEE_PERCENT}%
               </p>
 
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-slate-400">
                 Applied to every withdrawal request.
               </p>
             </div>
 
-            <div className="rounded-xl bg-blue-50 px-5 py-3 sm:text-right">
-              <p className="text-xs text-slate-500">
+            <div className="rounded-xl border border-cyan-400/10 bg-cyan-400/5 px-5 py-4 md:text-right">
+              <p className="text-xs uppercase tracking-wide text-slate-500">
                 Example
               </p>
 
-              <p className="font-semibold text-slate-900">
-                $10 → $9.50 received
+              <p className="mt-1 font-semibold text-white">
+                $10 → $9.00 received
               </p>
             </div>
           </div>
         </div>
 
-        {/* =====================================================
-            SECURITY INFO
-        ====================================================== */}
+        {/* SECURITY INFO */}
 
-        <div className="mb-6 rounded-2xl border border-blue-100 bg-blue-50 p-5">
+        <div className="mb-6 rounded-2xl border border-blue-400/10 bg-blue-500/5 p-5">
           <div className="flex gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
               <Wallet size={18} />
             </div>
 
             <div>
-              <h3 className="font-bold text-slate-900">
+              <h3 className="font-bold text-white">
                 Withdrawal Protection
               </h3>
 
-              <p className="mt-1 text-sm leading-6 text-slate-600">
-                Customer funds are securely handled by the
-                database withdrawal system. Approving a request
-                does not deduct the wallet again. Rejecting a
-                pending request restores the full requested
-                amount.
+              <p className="mt-1 text-sm leading-6 text-slate-400">
+                Customer funds are handled by the
+                secure database withdrawal system.
+                Approving a pending request does not
+                deduct the wallet again. Rejecting a
+                pending request restores the full
+                requested amount.
+              </p>
+
+              <p className="mt-2 text-xs font-medium text-slate-500">
+                Standard processing time:{" "}
+                {PROCESSING_TIME}
               </p>
             </div>
           </div>
         </div>
 
-        {/* =====================================================
-            FILTERS
-        ====================================================== */}
+        {/* FILTERS */}
 
         <div className="mb-6 flex flex-wrap gap-2">
           <FilterButton
             label="All"
             count={counts.all}
             active={filter === "all"}
-            onClick={() => setFilter("all")}
+            onClick={() =>
+              setFilter("all")
+            }
           />
 
           <FilterButton
             label="Pending"
             count={counts.pending}
             active={filter === "pending"}
-            onClick={() => setFilter("pending")}
+            onClick={() =>
+              setFilter("pending")
+            }
           />
 
           <FilterButton
@@ -610,36 +794,35 @@ export default function WithdrawalsPage() {
           />
         </div>
 
-        {/* =====================================================
-            WITHDRAWALS CARD
-        ====================================================== */}
+        {/* WITHDRAWALS */}
 
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 p-5">
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0a1527] shadow-xl shadow-black/10">
+          <div className="border-b border-white/10 p-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
                 <Wallet size={20} />
               </div>
 
               <div>
-                <h2 className="font-bold text-slate-900">
+                <h2 className="font-bold text-white">
                   Withdrawal Requests
                 </h2>
 
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-slate-400">
                   Review and manage customer withdrawals.
                 </p>
               </div>
             </div>
           </div>
 
-          {filteredWithdrawals.length === 0 ? (
+          {filteredWithdrawals.length ===
+          0 ? (
             <div className="px-5 py-16 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/5">
                 <Wallet className="text-slate-500" />
               </div>
 
-              <h3 className="mt-4 font-semibold text-slate-900">
+              <h3 className="mt-4 font-semibold text-white">
                 No{" "}
                 {filter === "all"
                   ? ""
@@ -648,7 +831,7 @@ export default function WithdrawalsPage() {
               </h3>
 
               <p className="mt-1 text-sm text-slate-500">
-                Real customer withdrawal requests will
+                Customer withdrawal requests will
                 appear here.
               </p>
             </div>
@@ -656,7 +839,7 @@ export default function WithdrawalsPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1350px]">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr className="border-b border-white/10 bg-white/[0.025] text-left text-xs uppercase tracking-wide text-slate-500">
                     <th className="px-5 py-4">
                       User
                     </th>
@@ -714,38 +897,38 @@ export default function WithdrawalsPage() {
                       return (
                         <tr
                           key={withdrawal.id}
-                          className="border-b border-slate-100 align-top last:border-0"
+                          className="border-b border-white/5 align-top last:border-0"
                         >
                           {/* USER */}
 
                           <td className="px-5 py-4">
                             <div className="flex items-start gap-3">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5">
                                 <User
                                   size={17}
-                                  className="text-slate-500"
+                                  className="text-slate-400"
                                 />
                               </div>
 
                               <div className="min-w-0">
-                                <div className="font-semibold text-slate-900">
+                                <div className="font-semibold text-white">
                                   {profile?.full_name ||
                                     "Customer"}
                                 </div>
 
                                 {profile?.email && (
-                                  <div className="max-w-[190px] truncate text-xs text-slate-500">
+                                  <div className="max-w-[190px] truncate text-xs text-slate-400">
                                     {profile.email}
                                   </div>
                                 )}
 
                                 {profile?.phone && (
-                                  <div className="text-xs text-slate-400">
+                                  <div className="text-xs text-slate-500">
                                     {profile.phone}
                                   </div>
                                 )}
 
-                                <div className="mt-1 max-w-[190px] truncate font-mono text-[10px] text-slate-400">
+                                <div className="mt-1 max-w-[190px] truncate font-mono text-[10px] text-slate-600">
                                   {withdrawal.user_id}
                                 </div>
                               </div>
@@ -758,7 +941,7 @@ export default function WithdrawalsPage() {
                             {account ? (
                               <div className="min-w-[230px]">
                                 <div className="flex items-center gap-2">
-                                  <div className="rounded-lg bg-slate-100 p-2">
+                                  <div className="rounded-lg bg-white/5 p-2">
                                     {account.method
                                       ?.toLowerCase()
                                       .includes(
@@ -766,24 +949,24 @@ export default function WithdrawalsPage() {
                                       ) ? (
                                       <Building2
                                         size={15}
-                                        className="text-slate-600"
+                                        className="text-slate-400"
                                       />
                                     ) : (
                                       <Wallet
                                         size={15}
-                                        className="text-slate-600"
+                                        className="text-slate-400"
                                       />
                                     )}
                                   </div>
 
                                   <div>
-                                    <p className="font-semibold text-slate-900">
+                                    <p className="font-semibold text-white">
                                       {account.method ||
                                         "Withdrawal"}
                                     </p>
 
                                     {account.account_name && (
-                                      <p className="text-xs text-slate-500">
+                                      <p className="text-xs text-slate-400">
                                         {
                                           account.account_name
                                         }
@@ -795,7 +978,7 @@ export default function WithdrawalsPage() {
                                 {account.bank_name && (
                                   <p className="mt-2 text-xs text-slate-500">
                                     Bank:{" "}
-                                    <span className="font-medium text-slate-700">
+                                    <span className="font-medium text-slate-300">
                                       {
                                         account.bank_name
                                       }
@@ -820,7 +1003,7 @@ export default function WithdrawalsPage() {
                                 )}
                               </div>
                             ) : (
-                              <span className="text-xs text-slate-400">
+                              <span className="text-xs text-slate-500">
                                 Account details unavailable
                               </span>
                             )}
@@ -829,7 +1012,7 @@ export default function WithdrawalsPage() {
                           {/* AMOUNT */}
 
                           <td className="px-5 py-4">
-                            <div className="font-bold text-slate-900">
+                            <div className="font-bold text-white">
                               $
                               {Number(
                                 withdrawal.amount
@@ -840,14 +1023,14 @@ export default function WithdrawalsPage() {
                           {/* FEE */}
 
                           <td className="px-5 py-4">
-                            <div className="font-semibold text-red-600">
+                            <div className="font-semibold text-red-400">
                               $
                               {Number(
                                 withdrawal.fee
                               ).toFixed(2)}
                             </div>
 
-                            <div className="text-xs text-slate-400">
+                            <div className="text-xs text-slate-500">
                               {WITHDRAWAL_FEE_PERCENT}%
                             </div>
                           </td>
@@ -855,14 +1038,14 @@ export default function WithdrawalsPage() {
                           {/* NET */}
 
                           <td className="px-5 py-4">
-                            <div className="font-bold text-green-600">
+                            <div className="font-bold text-emerald-400">
                               $
                               {Number(
                                 withdrawal.net_amount
                               ).toFixed(2)}
                             </div>
 
-                            <div className="text-xs text-slate-400">
+                            <div className="text-xs text-slate-500">
                               Customer receives
                             </div>
                           </td>
@@ -877,7 +1060,7 @@ export default function WithdrawalsPage() {
                             />
 
                             {withdrawal.admin_note && (
-                              <p className="mt-2 max-w-[180px] text-xs leading-5 text-slate-400">
+                              <p className="mt-2 max-w-[180px] text-xs leading-5 text-slate-500">
                                 {withdrawal.admin_note}
                               </p>
                             )}
@@ -885,10 +1068,10 @@ export default function WithdrawalsPage() {
 
                           {/* DATE */}
 
-                          <td className="px-5 py-4 text-sm text-slate-500">
-                            {new Date(
+                          <td className="px-5 py-4 text-sm text-slate-400">
+                            {formatDate(
                               withdrawal.created_at
-                            ).toLocaleString()}
+                            )}
                           </td>
 
                           {/* ACTIONS */}
@@ -898,15 +1081,18 @@ export default function WithdrawalsPage() {
                               "pending" && (
                               <div className="flex justify-end gap-2">
                                 <button
+                                  type="button"
                                   disabled={
-                                    isProcessing
+                                    isProcessing ||
+                                    processing !==
+                                      null
                                   }
                                   onClick={() =>
                                     approveWithdrawal(
                                       withdrawal
                                     )
                                   }
-                                  className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   {isProcessing ? (
                                     <RefreshCw
@@ -923,15 +1109,18 @@ export default function WithdrawalsPage() {
                                 </button>
 
                                 <button
+                                  type="button"
                                   disabled={
-                                    isProcessing
+                                    isProcessing ||
+                                    processing !==
+                                      null
                                   }
                                   onClick={() =>
                                     rejectWithdrawal(
                                       withdrawal
                                     )
                                   }
-                                  className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   {isProcessing ? (
                                     <RefreshCw
@@ -952,7 +1141,10 @@ export default function WithdrawalsPage() {
                             {withdrawal.status ===
                               "approved" && (
                               <div className="flex justify-end">
-                                <span className="text-xs font-semibold text-green-600">
+                                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+                                  <CheckCircle
+                                    size={14}
+                                  />
                                   Completed
                                 </span>
                               </div>
@@ -961,7 +1153,10 @@ export default function WithdrawalsPage() {
                             {withdrawal.status ===
                               "rejected" && (
                               <div className="flex justify-end">
-                                <span className="text-xs font-semibold text-red-600">
+                                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-400">
+                                  <XCircle
+                                    size={14}
+                                  />
                                   Rejected
                                 </span>
                               </div>
@@ -982,6 +1177,38 @@ export default function WithdrawalsPage() {
 }
 
 /* =========================================================
+   SUMMARY CARD
+========================================================= */
+
+function SummaryCard({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string | number;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#0a1527] p-5">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-400">
+          {label}
+        </p>
+
+        <div className="rounded-xl bg-blue-500/10 p-2 text-blue-400">
+          {icon}
+        </div>
+      </div>
+
+      <p className="mt-3 text-2xl font-bold text-white">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+/* =========================================================
    FILTER BUTTON
 ========================================================= */
 
@@ -998,11 +1225,12 @@ function FilterButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
         active
-          ? "bg-blue-600 text-white shadow-sm"
-          : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+          ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
+          : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
       }`}
     >
       {label}
@@ -1011,7 +1239,7 @@ function FilterButton({
         className={`ml-2 rounded-full px-2 py-0.5 text-xs ${
           active
             ? "bg-white/20 text-white"
-            : "bg-slate-100 text-slate-500"
+            : "bg-white/10 text-slate-400"
         }`}
       >
         {count}
@@ -1031,7 +1259,7 @@ function StatusBadge({
 }) {
   if (status === "approved") {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/10 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-400">
         <CheckCircle size={13} />
         Approved
       </span>
@@ -1040,7 +1268,7 @@ function StatusBadge({
 
   if (status === "rejected") {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-red-400/10 bg-red-400/10 px-3 py-1 text-xs font-semibold text-red-400">
         <XCircle size={13} />
         Rejected
       </span>
@@ -1048,7 +1276,7 @@ function StatusBadge({
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/10 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-400">
       <Clock size={13} />
       Pending
     </span>
@@ -1068,14 +1296,20 @@ function CopyValue({
     try {
       await navigator.clipboard.writeText(value);
       alert("Copied.");
-    } catch {
+    } catch (error) {
+      console.error(
+        "Clipboard error:",
+        error
+      );
       alert("Unable to copy.");
     }
   }
 
   const displayValue =
     value.length > 30
-      ? `${value.slice(0, 15)}...${value.slice(-10)}`
+      ? `${value.slice(0, 15)}...${value.slice(
+          -10
+        )}`
       : value;
 
   return (
@@ -1090,11 +1324,27 @@ function CopyValue({
       <button
         type="button"
         onClick={copyValue}
-        className="shrink-0 rounded-md border border-slate-200 p-1.5 text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
+        className="shrink-0 rounded-md border border-white/10 bg-white/5 p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
         title="Copy"
       >
         <Copy size={12} />
       </button>
     </div>
   );
+}
+
+/* =========================================================
+   DATE FORMAT
+========================================================= */
+
+function formatDate(
+  value: string
+) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return date.toLocaleString();
 }

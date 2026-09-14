@@ -1,0 +1,71 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="nova" x1="35" y1="205" x2="220" y2="55" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2563EB"/>
+      <stop offset="0.5" stop-color="#06B6D4"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+
+    <linearGradient id="bg" x1="20" y1="20" x2="236" y2="236" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#071426"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+
+  <!-- EarnNova E -->
+  <path
+    d="M76 61
+       H185
+       L168 91
+       H111
+       L104 108
+       H160
+       L145 136
+       H94
+       L87 154
+       H151
+       L171 184
+       H57
+       L76 61Z"
+    fill="white"
+  />
+
+  <!-- Nova orbit -->
+  <path
+    d="M42 166
+       C74 207 149 207 207 151
+       C225 133 232 113 228 95"
+    stroke="url(#nova)"
+    stroke-width="18"
+    stroke-linecap="round"
+    fill="none"
+  />
+
+  <!-- Orbit highlight -->
+  <path
+    d="M43 166
+       C72 199 122 204 165 184"
+    stroke="#2563EB"
+    stroke-width="5"
+    stroke-linecap="round"
+    fill="none"
+    opacity="0.9"
+  />
+
+  <!-- Nova star -->
+  <path
+    d="M207 43
+       L214 61
+       L233 68
+       L214 75
+       L207 94
+       L200 75
+       L181 68
+       L200 61
+       Z"
+    fill="#22D3EE"
+  />
+</svg>

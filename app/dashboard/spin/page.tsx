@@ -24,12 +24,21 @@ const wheelRewards = [
   "$0.02",
 ];
 
+const ACTIVE_MEMBERSHIPS = new Set([
+  "Starter",
+  "Basic",
+  "Pro",
+  "Premium",
+  "VIP",
+]);
+
 const MAX_SPINS = 5;
 const EXTRA_SPIN_FEE = 0.3;
 
+const supabase = createClient();
+
 export default function SpinPage() {
   const router = useRouter();
-  const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
   const [spinning, setSpinning] = useState(false);
@@ -43,34 +52,133 @@ export default function SpinPage() {
     let mounted = true;
 
     const loadUser = async () => {
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
 
-      if (authError || !user) {
-        router.replace("/login");
-        return;
-      }
+        if (authError || !user) {
+          router.replace("/login");
+          return;
+        }
 
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("wallet")
-        .eq("id", user.id)
-        .maybeSingle();
+        /*
+         * =====================================================
+         * LOAD PROFILE
+         * =====================================================
+         */
 
-      if (profileError) {
-        console.error("Profile error:", profileError);
-      }
+        const {
+          data: profile,
+          error: profileError,
+        } = await supabase
+          .from("profiles")
+          .select("wallet, membership, is_blocked, block_reason")
+          .eq("id", user.id)
+          .maybeSingle();
 
-      if (mounted) {
-        setWallet(
-          profile?.wallet !== null && profile?.wallet !== undefined
-            ? Number(profile.wallet)
-            : null
+        if (profileError) {
+          console.error(
+            "Profile error:",
+            profileError
+          );
+
+          if (mounted) {
+            setError(
+              "Unable to verify your account."
+            );
+            setLoading(false);
+          }
+
+          return;
+        }
+
+        if (!profile) {
+          if (mounted) {
+            setError(
+              "Your account profile could not be found."
+            );
+            setLoading(false);
+          }
+
+          return;
+        }
+
+        /*
+         * =====================================================
+         * BLOCKED ACCOUNT
+         * =====================================================
+         */
+
+        if (profile.is_blocked === true) {
+          await supabase.auth.signOut();
+
+          if (typeof window !== "undefined") {
+            localStorage.removeItem(
+              "earnNovaLoggedIn"
+            );
+            localStorage.removeItem(
+              "earnNovaUserEmail"
+            );
+            localStorage.removeItem(
+              "earnNovaUserId"
+            );
+            localStorage.removeItem(
+              "earnNovaUserName"
+            );
+          }
+
+          router.replace("/login");
+          return;
+        }
+
+        /*
+         * =====================================================
+         * ACTIVE MEMBERSHIP CHECK
+         *
+         * Spin is an earning feature, therefore only
+         * active paid members can access it.
+         * =====================================================
+         */
+
+        const membership = String(
+          profile.membership || ""
+        ).trim();
+
+        if (!ACTIVE_MEMBERSHIPS.has(membership)) {
+          router.replace("/plans");
+          return;
+        }
+
+        /*
+         * =====================================================
+         * WALLET
+         * =====================================================
+         */
+
+        if (mounted) {
+          setWallet(
+            profile.wallet !== null &&
+              profile.wallet !== undefined
+              ? Number(profile.wallet)
+              : null
+          );
+
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error(
+          "Load user error:",
+          error
         );
 
-        setLoading(false);
+        if (mounted) {
+          setError(
+            "Unable to load your account."
+          );
+          setLoading(false);
+        }
       }
     };
 
@@ -79,47 +187,91 @@ export default function SpinPage() {
     return () => {
       mounted = false;
     };
-  }, [router, supabase]);
+  }, [router]);
+
+  /*
+   * =========================================================
+   * FIND WHEEL REWARD POSITION
+   * =========================================================
+   */
 
   const getRewardIndex = (reward: number) => {
-    const normalizedReward = Number(reward).toFixed(2);
+    const normalizedReward =
+      Number(reward).toFixed(2);
 
-    const index = wheelRewards.findIndex((value) => {
-      const numericValue = Number.parseFloat(value.replace("$", ""));
-      return numericValue.toFixed(2) === normalizedReward;
-    });
+    const index = wheelRewards.findIndex(
+      (value) => {
+        const numericValue =
+          Number.parseFloat(
+            value.replace("$", "")
+          );
+
+        return (
+          numericValue.toFixed(2) ===
+          normalizedReward
+        );
+      }
+    );
 
     return index >= 0 ? index : 0;
   };
 
+  /*
+   * =========================================================
+   * REFRESH WALLET
+   * =========================================================
+   */
+
   const refreshWallet = async () => {
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
 
-    if (!user) return;
+    if (authError || !user) {
+      return;
+    }
 
-    const { data: profile, error: profileError } = await supabase
+    const {
+      data: profile,
+      error: profileError,
+    } = await supabase
       .from("profiles")
       .select("wallet")
       .eq("id", user.id)
       .maybeSingle();
 
     if (profileError) {
-      console.error("Wallet refresh error:", profileError);
+      console.error(
+        "Wallet refresh error:",
+        profileError
+      );
       return;
     }
 
     if (profile) {
-      setWallet(Number(profile.wallet));
+      setWallet(
+        profile.wallet !== null &&
+          profile.wallet !== undefined
+          ? Number(profile.wallet)
+          : null
+      );
     }
   };
+
+  /*
+   * =========================================================
+   * HANDLE SPIN
+   * =========================================================
+   */
 
   const handleSpin = async () => {
     if (spinning) return;
 
     if (spinsUsed >= MAX_SPINS) {
-      setError("You have reached today's spin limit.");
+      setError(
+        "You have reached today's spin limit."
+      );
       return;
     }
 
@@ -128,24 +280,47 @@ export default function SpinPage() {
     setSpinning(true);
 
     try {
-      const { data, error: rpcError } =
-        await supabase.rpc("spin_and_win");
+      /*
+       * The server-side RPC remains the authority for:
+       * - spin limit
+       * - free/paid spin
+       * - wallet charge
+       * - reward
+       */
+
+      const {
+        data,
+        error: rpcError,
+      } = await supabase.rpc(
+        "spin_and_win"
+      );
 
       if (rpcError) {
         throw rpcError;
       }
 
       if (!data?.success) {
-        throw new Error("Spin could not be completed.");
+        throw new Error(
+          "Spin could not be completed."
+        );
       }
 
-      const spinResult = data as SpinResult;
+      const spinResult =
+        data as SpinResult;
 
-      const rewardIndex = getRewardIndex(
-        Number(spinResult.reward)
-      );
+      /*
+       * =====================================================
+       * ANIMATE WHEEL TO SERVER RESULT
+       * =====================================================
+       */
 
-      const targetAngle = rewardIndex * 45;
+      const rewardIndex =
+        getRewardIndex(
+          Number(spinResult.reward)
+        );
+
+      const targetAngle =
+        rewardIndex * 45;
 
       const currentNormalized =
         ((rotation % 360) + 360) % 360;
@@ -154,7 +329,8 @@ export default function SpinPage() {
         ((targetAngle % 360) + 360) % 360;
 
       let extraAngle =
-        targetNormalized - currentNormalized;
+        targetNormalized -
+        currentNormalized;
 
       if (extraAngle < 0) {
         extraAngle += 360;
@@ -166,6 +342,10 @@ export default function SpinPage() {
         extraAngle;
 
       setRotation(finalRotation);
+
+      /*
+       * Wait for wheel animation.
+       */
 
       await new Promise((resolve) =>
         setTimeout(resolve, 4200)
@@ -179,7 +359,10 @@ export default function SpinPage() {
 
       await refreshWallet();
     } catch (err: unknown) {
-      console.error("Spin error:", err);
+      console.error(
+        "Spin error:",
+        err
+      );
 
       let message =
         "Unable to complete spin. Please try again.";
@@ -193,25 +376,45 @@ export default function SpinPage() {
         rawMessage.toLowerCase();
 
       if (
-        lowerMessage.includes("daily spin limit")
+        lowerMessage.includes(
+          "daily spin limit"
+        )
       ) {
         message =
           "You have reached today's spin limit.";
       } else if (
-        lowerMessage.includes("insufficient")
+        lowerMessage.includes(
+          "insufficient"
+        )
       ) {
         message =
           "You do not have enough wallet balance for an extra spin.";
       } else if (
-        lowerMessage.includes("authentication")
+        lowerMessage.includes(
+          "authentication"
+        ) ||
+        lowerMessage.includes(
+          "not authenticated"
+        )
       ) {
         message =
           "Your session has expired. Please login again.";
+
+        router.replace("/login");
       } else if (
         lowerMessage.includes("profile")
       ) {
         message =
           "Your account profile could not be found.";
+      } else if (
+        lowerMessage.includes("membership") ||
+        lowerMessage.includes("activation") ||
+        lowerMessage.includes("inactive")
+      ) {
+        message =
+          "An active plan is required to use Spin & Win.";
+
+        router.replace("/plans");
       }
 
       setError(message);
@@ -225,13 +428,21 @@ export default function SpinPage() {
     MAX_SPINS - spinsUsed
   );
 
-  const freeSpinAvailable = spinsUsed === 0;
+  const freeSpinAvailable =
+    spinsUsed === 0;
+
+  /*
+   * =========================================================
+   * LOADING
+   * =========================================================
+   */
 
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#070b10] text-white">
         <div className="text-center">
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-slate-700 border-t-blue-500" />
+
           <p className="text-sm text-slate-400">
             Loading Spin & Win...
           </p>
@@ -240,18 +451,32 @@ export default function SpinPage() {
     );
   }
 
+  /*
+   * =========================================================
+   * MAIN PAGE
+   * =========================================================
+   */
+
   return (
     <main className="min-h-screen bg-[#070b10] px-4 py-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
 
-        {/* HEADER */}
+        {/* =================================================
+            HEADER
+        ================================================= */}
 
         <div className="mb-8 flex items-center justify-between gap-4">
           <button
-            onClick={() => router.push("/dashboard")}
+            type="button"
+            onClick={() =>
+              router.push("/dashboard")
+            }
             className="flex items-center gap-2 rounded-xl border border-slate-800 bg-[#11151b] px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-blue-500/30 hover:bg-slate-800 hover:text-white"
           >
-            <span className="text-lg">←</span>
+            <span className="text-lg">
+              ←
+            </span>
+
             Dashboard
           </button>
 
@@ -261,6 +486,7 @@ export default function SpinPage() {
                 <p className="text-[10px] uppercase tracking-wider text-slate-500">
                   Wallet
                 </p>
+
                 <p className="font-bold text-emerald-400">
                   ${wallet.toFixed(2)}
                 </p>
@@ -271,6 +497,7 @@ export default function SpinPage() {
               <p className="text-[10px] uppercase tracking-wider text-slate-500">
                 Spins Left
               </p>
+
               <p className="font-bold text-blue-400">
                 {spinsRemaining}/{MAX_SPINS}
               </p>
@@ -278,7 +505,9 @@ export default function SpinPage() {
           </div>
         </div>
 
-        {/* TITLE */}
+        {/* =================================================
+            TITLE
+        ================================================= */}
 
         <div className="mb-10 text-center">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-xs font-bold tracking-wide text-blue-400">
@@ -290,16 +519,21 @@ export default function SpinPage() {
           </h1>
 
           <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-slate-400">
-            Spin once every day for free and get a chance
-            to earn extra rewards.
+            Spin once every day for free
+            and get a chance to earn extra
+            rewards.
           </p>
         </div>
 
-        {/* MAIN GRID */}
+        {/* =================================================
+            MAIN GRID
+        ================================================= */}
 
         <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
 
-          {/* WHEEL */}
+          {/* =================================================
+              WHEEL
+          ================================================= */}
 
           <section className="rounded-3xl border border-slate-800 bg-[#11151b] p-5 shadow-2xl sm:p-8">
             <div className="flex flex-col items-center">
@@ -349,9 +583,12 @@ export default function SpinPage() {
 
                     {/* SLICE DIVIDERS */}
 
-                    {Array.from({ length: 8 }).map(
+                    {Array.from({
+                      length: 8,
+                    }).map(
                       (_, index) => {
-                        const angle = index * 45;
+                        const angle =
+                          index * 45;
 
                         return (
                           <div
@@ -402,9 +639,12 @@ export default function SpinPage() {
                 </div>
               </div>
 
-              {/* SPIN BUTTON */}
+              {/* =================================================
+                  SPIN BUTTON
+              ================================================= */}
 
               <button
+                type="button"
                 onClick={handleSpin}
                 disabled={
                   spinning ||
@@ -422,7 +662,9 @@ export default function SpinPage() {
                 ) : freeSpinAvailable ? (
                   "🎁 SPIN FOR FREE"
                 ) : (
-                  `🎡 SPIN — $${EXTRA_SPIN_FEE.toFixed(2)}`
+                  `🎡 SPIN — $${EXTRA_SPIN_FEE.toFixed(
+                    2
+                  )}`
                 )}
               </button>
 
@@ -431,10 +673,14 @@ export default function SpinPage() {
                   ? "Please wait for the result..."
                   : freeSpinAvailable
                   ? "Your first spin today is free."
-                  : `This extra spin will cost $${EXTRA_SPIN_FEE.toFixed(2)}.`}
+                  : `This extra spin will cost $${EXTRA_SPIN_FEE.toFixed(
+                      2
+                    )}.`}
               </p>
 
-              {/* ERROR */}
+              {/* =================================================
+                  ERROR
+              ================================================= */}
 
               {error && (
                 <div className="mt-5 w-full max-w-md rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-center text-sm text-red-400">
@@ -442,12 +688,16 @@ export default function SpinPage() {
                 </div>
               )}
 
-              {/* RESULT */}
+              {/* =================================================
+                  RESULT
+              ================================================= */}
 
               {result && !spinning && (
                 <div className="mt-7 w-full max-w-md rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6 text-center">
                   <div className="text-5xl">
-                    {Number(result.reward) > 0
+                    {Number(
+                      result.reward
+                    ) > 0
                       ? "🎉"
                       : "🙂"}
                   </div>
@@ -457,13 +707,19 @@ export default function SpinPage() {
                   </p>
 
                   <p className="mt-1 text-4xl font-black text-emerald-400">
-                    ${Number(result.reward).toFixed(2)}
+                    $
+                    {Number(
+                      result.reward
+                    ).toFixed(2)}
                   </p>
 
-                  {Number(result.fee) > 0 && (
+                  {Number(result.fee) >
+                    0 && (
                     <p className="mt-3 text-xs text-slate-500">
                       Spin fee: $
-                      {Number(result.fee).toFixed(2)}
+                      {Number(
+                        result.fee
+                      ).toFixed(2)}
                     </p>
                   )}
 
@@ -473,7 +729,9 @@ export default function SpinPage() {
                     </p>
 
                     <p className="mt-1 text-lg font-bold text-blue-400">
-                      {result.spins_remaining}
+                      {
+                        result.spins_remaining
+                      }
                     </p>
                   </div>
                 </div>
@@ -481,7 +739,9 @@ export default function SpinPage() {
             </div>
           </section>
 
-          {/* SIDE PANEL */}
+          {/* =================================================
+              SIDE PANEL
+          ================================================= */}
 
           <div className="space-y-5">
 
@@ -531,9 +791,9 @@ export default function SpinPage() {
               </h2>
 
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                After using your free spin, you can
-                continue spinning using your wallet
-                balance.
+                After using your free spin,
+                you can continue spinning
+                using your wallet balance.
               </p>
 
               <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
@@ -587,7 +847,8 @@ export default function SpinPage() {
               </h2>
 
               <p className="mt-1 text-xs leading-5 text-slate-500">
-                Available rewards on the wheel.
+                Available rewards on the
+                wheel.
               </p>
 
               <div className="mt-5 grid grid-cols-2 gap-3">
@@ -620,9 +881,9 @@ export default function SpinPage() {
                   </h2>
 
                   <p className="mt-2 text-xs leading-5 text-slate-500">
-                    Spin limits, wallet charges and
-                    rewards are processed securely on
-                    the server.
+                    Spin limits, wallet charges
+                    and rewards are processed
+                    securely on the server.
                   </p>
                 </div>
               </div>
@@ -641,7 +902,8 @@ export default function SpinPage() {
                   <span>🎁</span>
 
                   <p className="text-sm leading-5 text-slate-400">
-                    Get one free spin every day.
+                    Get one free spin every
+                    day.
                   </p>
                 </div>
 
@@ -657,7 +919,8 @@ export default function SpinPage() {
                   <span>🔒</span>
 
                   <p className="text-sm leading-5 text-slate-400">
-                    Maximum 5 spins are allowed per day.
+                    Maximum 5 spins are
+                    allowed per day.
                   </p>
                 </div>
 
@@ -665,7 +928,8 @@ export default function SpinPage() {
                   <span>🏆</span>
 
                   <p className="text-sm leading-5 text-slate-400">
-                    Maximum reward per spin is $0.50.
+                    Maximum reward per spin
+                    is $0.50.
                   </p>
                 </div>
 

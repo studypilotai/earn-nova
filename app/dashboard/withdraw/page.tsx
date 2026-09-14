@@ -14,12 +14,24 @@ import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
-const WITHDRAWAL_FEE_PERCENT = 5;
-const MIN_WITHDRAWAL = 1;
+const WITHDRAWAL_FEE_PERCENT = 10;
+const MIN_WITHDRAWAL = 5;
+const WITHDRAWAL_PROCESSING_DAYS = "5–7 business days";
+
+const ACTIVE_MEMBERSHIPS = new Set([
+  "Starter",
+  "Basic",
+  "Pro",
+  "Premium",
+  "VIP",
+]);
 
 type Profile = {
   wallet: number | null;
   pending_balance: number | null;
+  membership: string | null;
+  is_blocked: boolean | null;
+  block_reason: string | null;
 };
 
 type WithdrawalAccount = {
@@ -46,94 +58,169 @@ export default function WithdrawPage() {
   const [success, setSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
+  /* =========================================================
+     CLEAR CUSTOMER LOCAL STORAGE
+  ========================================================= */
+
+  const clearCustomerStorage = () => {
+    if (typeof window === "undefined") return;
+
+    localStorage.removeItem("earnNovaLoggedIn");
+    localStorage.removeItem("earnNovaUserEmail");
+    localStorage.removeItem("earnNovaUserId");
+    localStorage.removeItem("earnNovaUserName");
+  };
+
+  /* =========================================================
+     LOAD WITHDRAWAL DATA
+  ========================================================= */
+
   const loadWithdrawalData = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+    try {
+      /* =======================================================
+         AUTH CHECK
+      ======================================================= */
 
-    if (userError || !user) {
-      router.replace("/login");
-      return;
-    }
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-    /* =========================================================
-       LOAD PROFILE
-       ========================================================= */
+      if (userError || !user) {
+        router.replace("/login");
+        return;
+      }
 
-    const {
-      data: profileData,
-      error: profileError,
-    } = await supabase
-      .from("profiles")
-      .select("wallet, pending_balance")
-      .eq("id", user.id)
-      .single();
+      /* =======================================================
+         LOAD PROFILE
+      ======================================================= */
 
-    if (profileError) {
-      console.error("Profile load error:", profileError);
+      const {
+        data: profileData,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select(
+          `
+            wallet,
+            pending_balance,
+            membership,
+            is_blocked,
+            block_reason
+          `
+        )
+        .eq("id", user.id)
+        .single();
+
+      if (profileError) {
+        console.error(
+          "Profile load error:",
+          profileError
+        );
+
+        setErrorMessage(
+          profileError.message ||
+            "Unable to load your wallet balance."
+        );
+
+        return;
+      }
+
+      /* =======================================================
+         BLOCKED ACCOUNT
+      ======================================================= */
+
+      if (profileData.is_blocked === true) {
+        await supabase.auth.signOut();
+
+        clearCustomerStorage();
+
+        router.replace("/login");
+        return;
+      }
+
+      /* =======================================================
+         ACTIVE MEMBERSHIP CHECK
+         
+         Withdrawal is an earning-related action.
+         Only active paid plans can withdraw.
+      ======================================================= */
+
+      const membership = String(
+        profileData.membership || ""
+      ).trim();
+
+      if (
+        !ACTIVE_MEMBERSHIPS.has(
+          membership
+        )
+      ) {
+        router.replace("/plans");
+        return;
+      }
+
+      setProfile(profileData);
+
+      /* =======================================================
+         LOAD WITHDRAWAL ACCOUNT
+      ======================================================= */
+
+      const {
+        data: accountData,
+        error: accountError,
+      } = await supabase
+        .from("withdrawal_accounts")
+        .select(
+          `
+            id,
+            method,
+            account_name,
+            account_number,
+            bank_name,
+            wallet_address
+          `
+        )
+        .eq("user_id", user.id)
+        .order("created_at", {
+          ascending: false,
+        })
+        .limit(1)
+        .maybeSingle();
+
+      if (accountError) {
+        console.error(
+          "Withdrawal account load error:",
+          accountError
+        );
+      }
+
+      setAccount(accountData || null);
+    } catch (error) {
+      console.error(
+        "Withdrawal page error:",
+        error
+      );
 
       setErrorMessage(
-        profileError.message ||
-          "Unable to load your wallet balance."
+        error instanceof Error
+          ? error.message
+          : "Unable to load withdrawal data."
       );
-
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setProfile(profileData);
-
-    /* =========================================================
-       LOAD LATEST WITHDRAWAL ACCOUNT
-       ========================================================= */
-
-    const {
-      data: accountData,
-      error: accountError,
-    } = await supabase
-      .from("withdrawal_accounts")
-      .select(
-        `
-          id,
-          method,
-          account_name,
-          account_number,
-          bank_name,
-          wallet_address
-        `
-      )
-      .eq("user_id", user.id)
-      .order("created_at", {
-        ascending: false,
-      })
-      .limit(1)
-      .maybeSingle();
-
-    if (accountError) {
-      console.error(
-        "Withdrawal account load error:",
-        accountError
-      );
-    }
-
-    setAccount(accountData || null);
-
-    setLoading(false);
   }, [router]);
 
   useEffect(() => {
-    loadWithdrawalData();
+    void loadWithdrawalData();
   }, [loadWithdrawalData]);
 
   /* =========================================================
-     AMOUNT CALCULATION
-     DISPLAY ONLY
-     FINAL CALCULATION IS DONE BY DATABASE RPC
-     ========================================================= */
+     DISPLAY CALCULATIONS
+  ========================================================= */
 
   const numericAmount = Number(amount) || 0;
 
@@ -142,17 +229,24 @@ export default function WithdrawPage() {
     (WITHDRAWAL_FEE_PERCENT / 100);
 
   const displayNetAmount =
-    Math.max(numericAmount - displayFee, 0);
+    Math.max(
+      numericAmount - displayFee,
+      0
+    );
 
   /* =========================================================
      SUBMIT WITHDRAWAL
-     ========================================================= */
+  ========================================================= */
 
   async function submitWithdrawal() {
     if (submitting) return;
 
     setSuccess(false);
     setErrorMessage("");
+
+    /* =======================================================
+       ACCOUNT CHECK
+    ======================================================= */
 
     if (!account) {
       setErrorMessage(
@@ -163,12 +257,50 @@ export default function WithdrawPage() {
       return;
     }
 
+    /* =======================================================
+       PROFILE CHECK
+    ======================================================= */
+
     if (!profile) {
       setErrorMessage(
         "Unable to load your wallet balance."
       );
       return;
     }
+
+    /* =======================================================
+       MEMBERSHIP RECHECK
+    ======================================================= */
+
+    const membership = String(
+      profile.membership || ""
+    ).trim();
+
+    if (
+      !ACTIVE_MEMBERSHIPS.has(
+        membership
+      )
+    ) {
+      router.replace("/plans");
+      return;
+    }
+
+    /* =======================================================
+       BLOCKED ACCOUNT RECHECK
+    ======================================================= */
+
+    if (profile.is_blocked === true) {
+      await supabase.auth.signOut();
+
+      clearCustomerStorage();
+
+      router.replace("/login");
+      return;
+    }
+
+    /* =======================================================
+       VALIDATE AMOUNT
+    ======================================================= */
 
     if (!amount.trim()) {
       setErrorMessage(
@@ -198,10 +330,17 @@ export default function WithdrawPage() {
       return;
     }
 
+    /* =======================================================
+       WALLET BALANCE CHECK
+    ======================================================= */
+
     const availableBalance =
       Number(profile.wallet) || 0;
 
-    if (numericAmount > availableBalance) {
+    if (
+      numericAmount >
+      availableBalance
+    ) {
       setErrorMessage(
         `Insufficient wallet balance. Available balance: $${availableBalance.toFixed(
           2
@@ -210,9 +349,9 @@ export default function WithdrawPage() {
       return;
     }
 
-    /* =========================================================
-       CONFIRMATION
-       ========================================================= */
+    /* =======================================================
+       CONFIRM WITHDRAWAL
+    ======================================================= */
 
     const confirmed = window.confirm(
       `Confirm withdrawal?\n\n` +
@@ -220,26 +359,31 @@ export default function WithdrawPage() {
         `Fee: $${displayFee.toFixed(
           2
         )} (${WITHDRAWAL_FEE_PERCENT}%)\n` +
-        `You receive: $${displayNetAmount.toFixed(2)}`
+        `You receive: $${displayNetAmount.toFixed(
+          2
+        )}\n\n` +
+        `Processing time: ${WITHDRAWAL_PROCESSING_DAYS}`
     );
 
     if (!confirmed) return;
 
     setSubmitting(true);
 
-    /* =========================================================
+    /* =======================================================
        SECURE DATABASE RPC
 
-       Database should handle:
+       IMPORTANT:
+       RPC MUST independently enforce:
        - authenticated user
+       - active membership
+       - blocked account
        - wallet balance
-       - account ownership
-       - pending withdrawal check
-       - 5% fee
+       - withdrawal account ownership
+       - 10% fee
        - net amount
-       - withdrawal creation
-       - balance deduction/locking
-       ========================================================= */
+       - pending withdrawal rules
+       - balance locking/deduction
+    ======================================================= */
 
     const {
       data,
@@ -283,7 +427,7 @@ export default function WithdrawPage() {
 
   /* =========================================================
      LOADING
-     ========================================================= */
+  ========================================================= */
 
   if (loading) {
     return (
@@ -293,6 +437,7 @@ export default function WithdrawPage() {
             size={18}
             className="animate-spin"
           />
+
           Loading withdrawal...
         </div>
       </main>
@@ -301,7 +446,7 @@ export default function WithdrawPage() {
 
   /* =========================================================
      PAGE
-     ========================================================= */
+  ========================================================= */
 
   return (
     <main className="min-h-screen bg-[#070b10] px-4 py-8 text-white">
@@ -309,7 +454,7 @@ export default function WithdrawPage() {
 
         {/* =====================================================
             HEADER
-            ===================================================== */}
+        ===================================================== */}
 
         <div className="mb-8 flex items-center gap-4">
           <button
@@ -336,7 +481,7 @@ export default function WithdrawPage() {
 
         {/* =====================================================
             ERROR
-            ===================================================== */}
+        ===================================================== */}
 
         {errorMessage && (
           <div className="mb-6 rounded-2xl border border-red-500/20 bg-red-500/10 p-5">
@@ -361,7 +506,7 @@ export default function WithdrawPage() {
 
         {/* =====================================================
             SUCCESS
-            ===================================================== */}
+        ===================================================== */}
 
         {success && (
           <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-5">
@@ -378,8 +523,9 @@ export default function WithdrawPage() {
 
                 <p className="mt-1 text-sm leading-6 text-slate-400">
                   Your withdrawal request has been
-                  submitted for review by the EarnNova
-                  Team.
+                  submitted for review by the
+                  EarnNova Team. Approval may take
+                  5–7 business days.
                 </p>
 
                 <button
@@ -398,7 +544,7 @@ export default function WithdrawPage() {
 
         {/* =====================================================
             WALLET
-            ===================================================== */}
+        ===================================================== */}
 
         <div className="mb-5 rounded-3xl border border-slate-800 bg-[#11151b] p-6 shadow-xl">
           <div className="flex items-center justify-between gap-4">
@@ -420,8 +566,9 @@ export default function WithdrawPage() {
             </div>
           </div>
 
-          {Number(profile?.pending_balance || 0) >
-            0 && (
+          {Number(
+            profile?.pending_balance || 0
+          ) > 0 && (
             <div className="mt-4 rounded-xl border border-amber-500/10 bg-amber-500/5 px-4 py-3">
               <p className="text-xs text-amber-300">
                 Pending balance: $
@@ -434,8 +581,8 @@ export default function WithdrawPage() {
         </div>
 
         {/* =====================================================
-            ACCOUNT CHECK
-            ===================================================== */}
+            WITHDRAWAL ACCOUNT
+        ===================================================== */}
 
         {!account ? (
           <div className="mb-5 rounded-3xl border border-amber-500/20 bg-amber-500/10 p-6">
@@ -478,7 +625,7 @@ export default function WithdrawPage() {
                 className="mt-0.5 shrink-0 text-emerald-400"
               />
 
-              <div className="flex-1 min-w-0">
+              <div className="min-w-0 flex-1">
                 <h2 className="font-semibold text-emerald-300">
                   Withdrawal account ready
                 </h2>
@@ -505,7 +652,7 @@ export default function WithdrawPage() {
                     </div>
                   )}
 
-                {/* BANK / UPaisa */}
+                {/* BANK / UPAISA */}
 
                 {account.method !== "USDT" && (
                   <div className="mt-3 space-y-2">
@@ -556,7 +703,7 @@ export default function WithdrawPage() {
 
         {/* =====================================================
             WITHDRAW FORM
-            ===================================================== */}
+        ===================================================== */}
 
         {account && (
           <div className="rounded-3xl border border-slate-800 bg-[#11151b] p-6 shadow-xl">
@@ -646,11 +793,22 @@ export default function WithdrawPage() {
 
             <div className="mt-4 rounded-xl border border-blue-500/10 bg-blue-500/5 px-4 py-3">
               <p className="text-xs leading-5 text-slate-500">
-                A {WITHDRAWAL_FEE_PERCENT}% withdrawal
-                processing fee is deducted from the
-                requested amount. Final fee and net
-                amount are calculated securely by the
-                database.
+                A {WITHDRAWAL_FEE_PERCENT}%
+                withdrawal processing fee is deducted
+                from the requested amount.
+              </p>
+            </div>
+
+            {/* PROCESSING NOTICE */}
+
+            <div className="mt-3 rounded-xl border border-amber-500/10 bg-amber-500/5 px-4 py-3">
+              <p className="text-xs leading-5 text-slate-400">
+                Withdrawal requests are reviewed and
+                approved within{" "}
+                <span className="font-semibold text-amber-300">
+                  {WITHDRAWAL_PROCESSING_DAYS}
+                </span>
+                .
               </p>
             </div>
 
@@ -682,7 +840,7 @@ export default function WithdrawPage() {
 
         {/* =====================================================
             INFORMATION
-            ===================================================== */}
+        ===================================================== */}
 
         <div className="mt-5 rounded-2xl border border-slate-800 bg-[#11151b] p-5">
           <h3 className="font-semibold text-slate-300">
@@ -691,26 +849,25 @@ export default function WithdrawPage() {
 
           <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-500">
             <li>
-              • Minimum withdrawal is $1.
+              • Minimum withdrawal is $5.
             </li>
 
             <li>
-              • Withdrawal fee is 5%.
+              • Withdrawal processing fee is 10%.
             </li>
 
             <li>
-              • Requests are reviewed by the EarnNova
-              Team.
+              • Requests are reviewed by the
+              EarnNova Team.
+            </li>
+
+            <li>
+              • Approval may take 5–7 business days.
             </li>
 
             <li>
               • Make sure your withdrawal account
               details are correct.
-            </li>
-
-            <li>
-              • Withdrawal processing may take
-              1–5 business days.
             </li>
           </ul>
         </div>

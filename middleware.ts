@@ -28,11 +28,9 @@ export async function middleware(request: NextRequest) {
             },
           });
 
-          cookiesToSet.forEach(
-            ({ name, value, options }) => {
-              response.cookies.set(name, value, options);
-            }
-          );
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
         },
       },
     }
@@ -41,11 +39,10 @@ export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   /* =========================================================
-     BASIC ROUTE TYPES
-     ========================================================= */
+     ROUTE TYPES
+  ========================================================= */
 
-  const isMaintenancePage =
-    pathname === "/maintenance";
+  const isMaintenancePage = pathname === "/maintenance";
 
   const isAdminRoute =
     pathname === "/admin" ||
@@ -55,12 +52,11 @@ export async function middleware(request: NextRequest) {
     pathname === "/api/admin" ||
     pathname.startsWith("/api/admin/");
 
-  const isApiRoute =
-    pathname.startsWith("/api/");
+  const isApiRoute = pathname.startsWith("/api/");
 
   /* =========================================================
      PUBLIC ROUTES
-     ========================================================= */
+  ========================================================= */
 
   const publicRoutes = [
     "/",
@@ -76,16 +72,16 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/auth/");
 
   /* =========================================================
-     GET CURRENT USER
-     ========================================================= */
+     AUTH USER
+  ========================================================= */
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   /* =========================================================
-     MAINTENANCE MODE
-     ========================================================= */
+     MAINTENANCE
+  ========================================================= */
 
   let maintenanceMode = false;
 
@@ -106,14 +102,10 @@ export async function middleware(request: NextRequest) {
   }
 
   /* =========================================================
-     MAINTENANCE PAGE ITSELF
-     ========================================================= */
+     MAINTENANCE PAGE
+  ========================================================= */
 
   if (isMaintenancePage) {
-    /*
-     * If maintenance is OFF, don't leave the user
-     * stuck on /maintenance.
-     */
     if (!maintenanceMode) {
       if (user) {
         return NextResponse.redirect(
@@ -130,36 +122,11 @@ export async function middleware(request: NextRequest) {
   }
 
   /* =========================================================
-     ADMIN ACCESS DURING MAINTENANCE
-     ========================================================= */
+     MAINTENANCE MODE
+  ========================================================= */
 
   if (maintenanceMode) {
-    /*
-     * Admin routes remain accessible so admin can
-     * turn maintenance mode OFF.
-     */
-
-    if (isAdminRoute || isAdminApiRoute) {
-      /*
-       * Continue below for normal admin authentication
-       * and role checking.
-       */
-    } else {
-      /*
-       * Every customer/public/API route goes to
-       * maintenance page.
-       *
-       * This includes:
-       * /
-       * /login
-       * /signup
-       * /dashboard
-       * /activate
-       * /forgot-password
-       * /reset-password
-       * etc.
-       */
-
+    if (!isAdminRoute && !isAdminApiRoute) {
       return NextResponse.redirect(
         new URL("/maintenance", request.url)
       );
@@ -168,22 +135,15 @@ export async function middleware(request: NextRequest) {
 
   /* =========================================================
      PUBLIC ROUTES
-     ========================================================= */
+  ========================================================= */
 
   if (isPublicRoute) {
     return response;
   }
 
   /* =========================================================
-     API ROUTES
-     ========================================================= */
-
-  /*
-   * Non-admin APIs should normally require authentication.
-   *
-   * Admin APIs are allowed through maintenance mode,
-   * but the API itself performs admin verification.
-   */
+     API
+  ========================================================= */
 
   if (isApiRoute) {
     if (!user) {
@@ -201,8 +161,8 @@ export async function middleware(request: NextRequest) {
   }
 
   /* =========================================================
-     AUTH REQUIRED
-     ========================================================= */
+     LOGIN REQUIRED
+  ========================================================= */
 
   if (!user) {
     if (isAdminRoute) {
@@ -217,31 +177,107 @@ export async function middleware(request: NextRequest) {
   }
 
   /* =========================================================
-     ADMIN ROLE CHECK
-     ========================================================= */
+     ADMIN ROUTES
+  ========================================================= */
 
   if (isAdminRoute) {
-    const { data: profile, error } =
-      await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
+    const {
+      data: profile,
+      error,
+    } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
 
     if (
       error ||
       !profile ||
       profile.role !== "admin"
     ) {
-      /*
-       * If maintenance is active, don't expose
-       * admin pages to normal customers.
-       */
-      if (maintenanceMode) {
+      await supabase.auth.signOut();
+
+      return NextResponse.redirect(
+        new URL("/admin/login", request.url)
+      );
+    }
+
+    return response;
+  }
+
+  /* =========================================================
+     CUSTOMER PROFILE
+  ========================================================= */
+
+  const {
+    data: profile,
+    error: profileError,
+  } = await supabase
+    .from("profiles")
+    .select(
+      "id, role, is_blocked, block_reason"
+    )
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    await supabase.auth.signOut();
+
+    return NextResponse.redirect(
+      new URL("/login", request.url)
+    );
+  }
+
+  /* =========================================================
+     CUSTOMER CANNOT ACCESS ADMIN
+  ========================================================= */
+
+  if (profile.role === "customer") {
+    /*
+     * Customer dashboard is ALWAYS allowed.
+     * Activation status does NOT affect routing.
+     */
+
+    if (
+      pathname === "/dashboard" ||
+      pathname.startsWith("/dashboard/")
+    ) {
+      if (profile.is_blocked === true) {
+        await supabase.auth.signOut();
+
         return NextResponse.redirect(
-          new URL("/maintenance", request.url)
+          new URL("/login", request.url)
         );
       }
+
+      return response;
+    }
+
+    /* =======================================================
+       CUSTOMER ACTIVATE PAGE
+    ======================================================= */
+
+    if (
+      pathname === "/activate" ||
+      pathname.startsWith("/activate/")
+    ) {
+      if (profile.is_blocked === true) {
+        await supabase.auth.signOut();
+
+        return NextResponse.redirect(
+          new URL("/login", request.url)
+        );
+      }
+
+      return response;
+    }
+
+    /* =======================================================
+       CUSTOMER NORMAL PROTECTED PAGES
+    ======================================================= */
+
+    if (profile.is_blocked === true) {
+      await supabase.auth.signOut();
 
       return NextResponse.redirect(
         new URL("/login", request.url)
@@ -252,140 +288,23 @@ export async function middleware(request: NextRequest) {
   }
 
   /* =========================================================
-     CUSTOMER PROFILE CHECK
-     ========================================================= */
+     UNKNOWN / INVALID ROLE
+  ========================================================= */
 
-  const { data: profile, error: profileError } =
-    await supabase
-      .from("profiles")
-      .select(
-        "id, role, is_blocked, block_reason"
-      )
-      .eq("id", user.id)
-      .maybeSingle();
+  await supabase.auth.signOut();
 
-  /*
-   * Profile missing / query failed
-   */
-  if (profileError || !profile) {
-    return NextResponse.redirect(
-      new URL("/login", request.url)
-    );
-  }
-
-  /* =========================================================
-     BLOCKED ACCOUNT
-     ========================================================= */
-
-  if (
-    profile.role === "customer" &&
-    profile.is_blocked === true
-  ) {
-    /*
-     * Keep blocked customer away from protected
-     * customer pages.
-     */
-    if (
-      pathname.startsWith("/dashboard") ||
-      pathname === "/activate"
-    ) {
-      return NextResponse.redirect(
-        new URL("/login", request.url)
-      );
-    }
-  }
-
-  /* =========================================================
-     CUSTOMER ACTIVATION CHECK
-     ========================================================= */
-
-  if (
-    profile.role === "customer"
-  ) {
-    const isDashboardRoute =
-      pathname === "/dashboard" ||
-      pathname.startsWith("/dashboard/");
-
-    const isActivateRoute =
-      pathname === "/activate" ||
-      pathname.startsWith("/activate/");
-
-    /*
-     * Admin pages already returned above.
-     */
-
-    if (
-      isDashboardRoute &&
-      !isActivateRoute
-    ) {
-      const { data: activation } =
-        await supabase
-          .from("activations")
-          .select("status")
-          .eq("user_id", user.id)
-          .in("status", [
-            "pending",
-            "approved",
-          ])
-          .order("created_at", {
-            ascending: false,
-          })
-          .limit(1)
-          .maybeSingle();
-
-      /*
-       * No approved activation:
-       *
-       * Send user to /activate.
-       */
-      if (
-        !activation ||
-        activation.status !== "approved"
-      ) {
-        return NextResponse.redirect(
-          new URL("/activate", request.url)
-        );
-      }
-    }
-
-    /*
-     * If user is already activated and visits
-     * /activate, send them to dashboard.
-     */
-    if (isActivateRoute) {
-      const { data: activation } =
-        await supabase
-          .from("activations")
-          .select("status")
-          .eq("user_id", user.id)
-          .eq("status", "approved")
-          .order("created_at", {
-            ascending: false,
-          })
-          .limit(1)
-          .maybeSingle();
-
-      if (activation?.status === "approved") {
-        return NextResponse.redirect(
-          new URL("/dashboard", request.url)
-        );
-      }
-    }
-  }
-
-  /* =========================================================
-     DEFAULT
-     ========================================================= */
-
-  return response;
+  return NextResponse.redirect(
+    new URL("/login", request.url)
+  );
 }
 
 /* =========================================================
-   MIDDLEWARE MATCHER
-   ========================================================= */
+   MATCHER
+========================================================= */
 
 export const config = {
   matcher: [
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map)$).*)",
   ],
 };
+

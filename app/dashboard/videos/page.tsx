@@ -38,6 +38,15 @@ type WatchSession = {
   videoUrl: string;
 };
 
+type VideoViewRow = {
+  video_id: number | string | null;
+  completed_at: string | null;
+};
+
+type VideoRow = {
+  id: number | string;
+};
+
 /* =========================================================
    SETTINGS
 ========================================================= */
@@ -48,13 +57,34 @@ type WatchSession = {
  * Videos are separate from tasks.
  * Maximum 50 video activities per day.
  */
+
 const DAILY_VIDEO_LIMIT = 50;
 
 /*
  * Customer must keep the video session open
  * for this amount of time.
  */
+
 const WATCH_SECONDS = 30;
+
+/*
+ * Only active paid memberships can use
+ * the Watch & Earn system.
+ */
+
+const ACTIVE_MEMBERSHIPS = new Set([
+  "Starter",
+  "Basic",
+  "Pro",
+  "Premium",
+  "VIP",
+]);
+
+/*
+ * Shared browser Supabase client.
+ */
+
+const supabase = createClient();
 
 /* =========================================================
    PAGE
@@ -62,7 +92,6 @@ const WATCH_SECONDS = 30;
 
 export default function VideosPage() {
   const router = useRouter();
-  const supabase = createClient();
 
   const [video, setVideo] =
     useState<AvailableVideo | null>(null);
@@ -103,7 +132,9 @@ export default function VideosPage() {
 
       try {
         /*
+         * ===================================================
          * AUTH
+         * ===================================================
          */
 
         const {
@@ -117,7 +148,100 @@ export default function VideosPage() {
         }
 
         /*
+         * ===================================================
+         * PROFILE / ACTIVATION CHECK
+         * ===================================================
+         *
+         * Videos are an earning feature.
+         * Only active paid memberships can use them.
+         */
+
+        const {
+          data: profile,
+          error: profileError,
+        } = await supabase
+          .from("profiles")
+          .select(
+            "membership, is_blocked, block_reason"
+          )
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (profileError) {
+          console.error(
+            "PROFILE ERROR:",
+            profileError
+          );
+
+          setErrorMessage(
+            "Unable to verify your account."
+          );
+
+          return;
+        }
+
+        if (!profile) {
+          setErrorMessage(
+            "Your account profile could not be found."
+          );
+
+          return;
+        }
+
+        /*
+         * ===================================================
+         * BLOCKED ACCOUNT
+         * ===================================================
+         */
+
+        if (profile.is_blocked === true) {
+          await supabase.auth.signOut();
+
+          if (typeof window !== "undefined") {
+            localStorage.removeItem(
+              "earnNovaLoggedIn"
+            );
+
+            localStorage.removeItem(
+              "earnNovaUserEmail"
+            );
+
+            localStorage.removeItem(
+              "earnNovaUserId"
+            );
+
+            localStorage.removeItem(
+              "earnNovaUserName"
+            );
+          }
+
+          router.replace("/login");
+          return;
+        }
+
+        /*
+         * ===================================================
+         * ACTIVE MEMBERSHIP CHECK
+         * ===================================================
+         */
+
+        const membership = String(
+          profile.membership || ""
+        ).trim();
+
+        if (
+          !ACTIVE_MEMBERSHIPS.has(
+            membership
+          )
+        ) {
+          router.replace("/plans");
+          return;
+        }
+
+        /*
+         * ===================================================
          * CHECK TODAY'S COMPLETED VIDEOS
+         * ===================================================
          */
 
         const startOfDay =
@@ -161,14 +285,16 @@ export default function VideosPage() {
         }
 
         const completedList =
-          completed ?? [];
+          (completed ?? []) as VideoViewRow[];
 
         setCompletedToday(
           completedList.length
         );
 
         /*
+         * ===================================================
          * DAILY VIDEO LIMIT
+         * ===================================================
          */
 
         if (
@@ -180,7 +306,9 @@ export default function VideosPage() {
         }
 
         /*
-         * LOAD ONLY ACTIVE VIDEO IDs.
+         * ===================================================
+         * LOAD ACTIVE VIDEO IDS
+         * ===================================================
          *
          * We intentionally do NOT fetch:
          *
@@ -224,22 +352,26 @@ export default function VideosPage() {
           return;
         }
 
+        const videoRows =
+          (data ?? []) as VideoRow[];
+
         if (
-          !data ||
-          data.length === 0
+          videoRows.length === 0
         ) {
           setVideo(null);
           return;
         }
 
         /*
+         * ===================================================
          * REMOVE ALREADY COMPLETED VIDEOS
+         * ===================================================
          */
 
         const completedIds =
           new Set(
             completedList.map(
-              (item) =>
+              (item: VideoViewRow) =>
                 Number(
                   item.video_id
                 )
@@ -247,8 +379,8 @@ export default function VideosPage() {
           );
 
         const eligible =
-          data.filter(
-            (item) =>
+          videoRows.filter(
+            (item: VideoRow) =>
               !completedIds.has(
                 Number(item.id)
               )
@@ -262,10 +394,12 @@ export default function VideosPage() {
         }
 
         /*
+         * ===================================================
          * RANDOM VIDEO SELECTION
+         * ===================================================
          *
-         * The customer does not see the
-         * campaign ID or reward.
+         * Customer does not see campaign ID
+         * or reward.
          */
 
         const randomIndex =
@@ -295,7 +429,7 @@ export default function VideosPage() {
       } finally {
         setLoading(false);
       }
-    }, [router, supabase]);
+    }, [router]);
 
   /* =======================================================
      INITIAL LOAD

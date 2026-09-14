@@ -5,22 +5,20 @@ import {
   useState,
 } from "react";
 
+import { useRouter } from "next/navigation";
+
 import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
 export default function AdminLoginPage() {
-  const [email, setEmail] =
-    useState("");
+  const router = useRouter();
 
-  const [password, setPassword] =
-    useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
-  const [loading, setLoading] =
-    useState(false);
-
-  const [error, setError] =
-    useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   async function handleLogin(
     e: FormEvent<HTMLFormElement>
@@ -33,13 +31,9 @@ export default function AdminLoginPage() {
     setLoading(true);
 
     try {
-      const cleanEmail =
-        email.trim().toLowerCase();
+      const cleanEmail = email.trim().toLowerCase();
 
-      if (
-        !cleanEmail ||
-        !password
-      ) {
+      if (!cleanEmail || !password) {
         setError(
           "Please enter email and password."
         );
@@ -54,13 +48,10 @@ export default function AdminLoginPage() {
       const {
         data,
         error: loginError,
-      } =
-        await supabase.auth.signInWithPassword(
-          {
-            email: cleanEmail,
-            password,
-          }
-        );
+      } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
 
       if (loginError) {
         console.error(
@@ -69,7 +60,8 @@ export default function AdminLoginPage() {
         );
 
         setError(
-          loginError.message
+          loginError.message ||
+            "Invalid email or password."
         );
 
         setLoading(false);
@@ -86,7 +78,7 @@ export default function AdminLoginPage() {
       }
 
       /* ==================================================
-         VERIFY PROFILE
+         VERIFY ADMIN PROFILE
       ================================================== */
 
       const {
@@ -97,10 +89,7 @@ export default function AdminLoginPage() {
         .select(
           "id, role, email, full_name"
         )
-        .eq(
-          "id",
-          data.user.id
-        )
+        .eq("id", data.user.id)
         .maybeSingle();
 
       if (profileError) {
@@ -134,10 +123,7 @@ export default function AdminLoginPage() {
          ADMIN ROLE CHECK
       ================================================== */
 
-      if (
-        profile.role !==
-        "admin"
-      ) {
+      if (profile.role !== "admin") {
         await supabase.auth.signOut();
 
         setError(
@@ -150,7 +136,7 @@ export default function AdminLoginPage() {
 
       /* ==================================================
          LOCAL STORAGE
-         UI ONLY — NOT AUTHORITY
+         UI ONLY — NEVER AUTHORITY
       ================================================== */
 
       try {
@@ -169,9 +155,7 @@ export default function AdminLoginPage() {
           cleanEmail
         );
 
-        if (
-          profile.full_name
-        ) {
+        if (profile.full_name) {
           localStorage.setItem(
             "earnNovaUserName",
             profile.full_name
@@ -185,9 +169,7 @@ export default function AdminLoginPage() {
          ADMIN REDIRECT
       ================================================== */
 
-      window.location.assign(
-        "/admin"
-      );
+      router.replace("/admin");
     } catch (err) {
       console.error(
         "ADMIN LOGIN UNEXPECTED ERROR:",
@@ -216,9 +198,10 @@ export default function AdminLoginPage() {
 
           <div className="mb-5 flex items-center justify-center gap-3">
 
-            {/* EarnNova logo */}
+            {/* EarnNova Logo */}
 
             <div className="relative flex h-12 w-12 items-center justify-center">
+
               <div className="absolute inset-0 rounded-[15px] bg-blue-600/20 blur-md" />
 
               <div className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-[15px] border border-blue-400/20 bg-gradient-to-br from-white via-slate-100 to-blue-50 shadow-xl">
@@ -240,6 +223,7 @@ export default function AdminLoginPage() {
                 <div className="absolute bottom-1.5 left-2 h-[2px] w-5 rounded-full bg-blue-500" />
 
               </div>
+
             </div>
 
             <div className="text-left">
@@ -270,7 +254,7 @@ export default function AdminLoginPage() {
         </div>
 
         {/* =================================================
-            CARD
+            LOGIN CARD
         ================================================= */}
 
         <div className="rounded-3xl border border-slate-800 bg-[#11151b] p-6 shadow-2xl">
@@ -286,9 +270,7 @@ export default function AdminLoginPage() {
           {/* FORM */}
 
           <form
-            onSubmit={
-              handleLogin
-            }
+            onSubmit={handleLogin}
             className="space-y-5"
           >
 
@@ -308,9 +290,7 @@ export default function AdminLoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) =>
-                  setEmail(
-                    e.target.value
-                  )
+                  setEmail(e.target.value)
                 }
                 placeholder="admin@example.com"
                 autoComplete="username"
@@ -339,9 +319,7 @@ export default function AdminLoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) =>
-                  setPassword(
-                    e.target.value
-                  )
+                  setPassword(e.target.value)
                 }
                 placeholder="Enter admin password"
                 autoComplete="current-password"
@@ -370,12 +348,15 @@ export default function AdminLoginPage() {
 
           <div className="mt-6 border-t border-slate-800 pt-5 text-center">
 
-            <a
-              href="/login"
+            <button
+              type="button"
+              onClick={() =>
+                router.push("/login")
+              }
               className="text-sm font-semibold text-slate-500 transition hover:text-blue-400"
             >
               ← Customer Login
-            </a>
+            </button>
 
           </div>
 

@@ -8,7 +8,9 @@ import {
   useMemo,
   useState,
 } from "react";
+
 import { useRouter } from "next/navigation";
+
 import { createClient } from "@/lib/supabase/client";
 
 import {
@@ -50,21 +52,35 @@ type VideoItem = {
 };
 
 /* =========================================================
-   CURRENT EARNNOVA RULE
+   EARNNOVA VIDEO RULE
    =========================================================
+
    Tasks and videos are separate systems.
 
-   Current customer limit:
+   Customer limits:
+
    - Tasks: 10/day
    - Videos: 50/day
 
-   Admin does NOT need plan-specific video limits here.
+   The 50/day video limit is enforced server-side
+   by the secure video RPCs.
+
    ========================================================= */
 
 const DAILY_VIDEO_LIMIT = 50;
 
 /* =========================================================
-   TASK
+   ACTIVE / VALID STATUSES
+   ========================================================= */
+
+const VALID_VIDEO_STATUSES = new Set([
+  "active",
+  "inactive",
+  "completed",
+]);
+
+/* =========================================================
+   PAGE
    ========================================================= */
 
 export default function AdminVideosPage() {
@@ -92,7 +108,6 @@ export default function AdminVideosPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionId, setActionId] = useState<number | null>(null);
-
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -162,6 +177,13 @@ export default function AdminVideosPage() {
     ) {
       await supabase.auth.signOut();
 
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("earnNovaLoggedIn");
+        localStorage.removeItem("earnNovaUserEmail");
+        localStorage.removeItem("earnNovaUserName");
+        localStorage.removeItem("earnNovaUserId");
+      }
+
       router.replace("/admin/login");
       return false;
     }
@@ -213,35 +235,55 @@ export default function AdminVideosPage() {
         );
 
         setVideos([]);
-        setErrorMessage(error.message);
+
+        setErrorMessage(
+          error.message ||
+            "Unable to load video campaigns."
+        );
+
         return;
       }
 
       const normalized: VideoItem[] =
-        (data ?? []).map((item) => ({
+        (data ?? []).map((item: VideoItem) => ({
           id: Number(item.id),
-          video_url: item.video_url ?? "",
+
+          video_url:
+            item.video_url ?? "",
+
           target_views: Number(
             item.target_views ?? 0
           ),
+
           total_budget: Number(
             item.total_budget ?? 0
           ),
+
           profit_percent: Number(
             item.profit_percent ?? 0
           ),
+
           customer_pool: Number(
             item.customer_pool ?? 0
           ),
+
           customer_reward: Number(
             item.customer_reward ?? 0
           ),
+
           earnnova_profit: Number(
             item.earnnova_profit ?? 0
           ),
-          views: Number(item.views ?? 0),
-          status: item.status ?? "inactive",
-          created_at: item.created_at ?? "",
+
+          views: Number(
+            item.views ?? 0
+          ),
+
+          status:
+            item.status ?? "inactive",
+
+          created_at:
+            item.created_at ?? "",
         }));
 
       setVideos(normalized);
@@ -250,6 +292,8 @@ export default function AdminVideosPage() {
         "LOAD VIDEOS ERROR:",
         error
       );
+
+      setVideos([]);
 
       setErrorMessage(
         error instanceof Error
@@ -273,7 +317,9 @@ export default function AdminVideosPage() {
     url: string
   ): boolean {
     try {
-      const parsed = new URL(url.trim());
+      const parsed = new URL(
+        url.trim()
+      );
 
       const host = parsed.hostname
         .toLowerCase()
@@ -294,8 +340,12 @@ export default function AdminVideosPage() {
       if (
         parsed.pathname === "/watch"
       ) {
+        const videoId =
+          parsed.searchParams.get("v");
+
         return Boolean(
-          parsed.searchParams.get("v")
+          videoId &&
+            videoId.trim().length > 0
         );
       }
 
@@ -335,19 +385,17 @@ export default function AdminVideosPage() {
     setMessage("");
     setErrorMessage("");
 
-    const cleanUrl = videoUrl.trim();
+    const cleanUrl =
+      videoUrl.trim();
 
-    const target = Number(
-      targetViews
-    );
+    const target =
+      Number(targetViews);
 
-    const budget = Number(
-      totalBudget
-    );
+    const budget =
+      Number(totalBudget);
 
-    const profit = Number(
-      profitPercent
-    );
+    const profit =
+      Number(profitPercent);
 
     /* -----------------------------------------------------
        VALIDATION
@@ -357,6 +405,7 @@ export default function AdminVideosPage() {
       setErrorMessage(
         "YouTube video link required hai."
       );
+
       return;
     }
 
@@ -364,6 +413,7 @@ export default function AdminVideosPage() {
       setErrorMessage(
         "Valid YouTube video link enter karo."
       );
+
       return;
     }
 
@@ -374,6 +424,7 @@ export default function AdminVideosPage() {
       setErrorMessage(
         "Target customers 1 ya us se zyada hona chahiye."
       );
+
       return;
     }
 
@@ -384,6 +435,7 @@ export default function AdminVideosPage() {
       setErrorMessage(
         "Campaign budget $0 se zyada hona chahiye."
       );
+
       return;
     }
 
@@ -395,6 +447,29 @@ export default function AdminVideosPage() {
       setErrorMessage(
         "Profit percentage 0 se 99 ke darmiyan hona chahiye."
       );
+
+      return;
+    }
+
+    if (
+      budget >
+      1_000_000
+    ) {
+      setErrorMessage(
+        "Campaign budget bohat zyada hai."
+      );
+
+      return;
+    }
+
+    if (
+      target >
+      100_000_000
+    ) {
+      setErrorMessage(
+        "Target customers bohat zyada hai."
+      );
+
       return;
     }
 
@@ -416,6 +491,7 @@ export default function AdminVideosPage() {
       setErrorMessage(
         "Customer reward calculate nahi ho saka."
       );
+
       return;
     }
 
@@ -433,40 +509,43 @@ export default function AdminVideosPage() {
 
       /* ---------------------------------------------------
          INSERT
+
+         Database RLS must allow INSERT only for admin.
          --------------------------------------------------- */
 
-      const { error } =
-        await supabase
-          .from("videos")
-          .insert({
-            video_url: cleanUrl,
+      const {
+        error,
+      } = await supabase
+        .from("videos")
+        .insert({
+          video_url: cleanUrl,
 
-            target_views: target,
+          target_views: target,
 
-            total_budget: Number(
-              budget.toFixed(2)
-            ),
+          total_budget: Number(
+            budget.toFixed(2)
+          ),
 
-            profit_percent: Number(
-              profit.toFixed(2)
-            ),
+          profit_percent: Number(
+            profit.toFixed(2)
+          ),
 
-            customer_pool: Number(
-              customerPool.toFixed(2)
-            ),
+          customer_pool: Number(
+            customerPool.toFixed(2)
+          ),
 
-            customer_reward: Number(
-              customerReward.toFixed(6)
-            ),
+          customer_reward: Number(
+            customerReward.toFixed(6)
+          ),
 
-            earnnova_profit: Number(
-              earnnovaProfit.toFixed(2)
-            ),
+          earnnova_profit: Number(
+            earnnovaProfit.toFixed(2)
+          ),
 
-            views: 0,
+          views: 0,
 
-            status: "active",
-          });
+          status: "active",
+        });
 
       if (error) {
         console.error(
@@ -475,7 +554,8 @@ export default function AdminVideosPage() {
         );
 
         setErrorMessage(
-          error.message
+          error.message ||
+            "Unable to add video campaign."
         );
 
         return;
@@ -520,11 +600,24 @@ export default function AdminVideosPage() {
     setErrorMessage("");
 
     if (
+      !VALID_VIDEO_STATUSES.has(
+        video.status
+      )
+    ) {
+      setErrorMessage(
+        "Invalid campaign status."
+      );
+
+      return;
+    }
+
+    if (
       video.status === "completed"
     ) {
       setErrorMessage(
         "Completed campaign ko dobara activate nahi kiya ja sakta."
       );
+
       return;
     }
 
@@ -541,13 +634,14 @@ export default function AdminVideosPage() {
     setActionId(video.id);
 
     try {
-      const { error } =
-        await supabase
-          .from("videos")
-          .update({
-            status: newStatus,
-          })
-          .eq("id", video.id);
+      const {
+        error,
+      } = await supabase
+        .from("videos")
+        .update({
+          status: newStatus,
+        })
+        .eq("id", video.id);
 
       if (error) {
         console.error(
@@ -556,7 +650,8 @@ export default function AdminVideosPage() {
         );
 
         setErrorMessage(
-          error.message
+          error.message ||
+            "Unable to update video campaign."
         );
 
         return;
@@ -619,11 +714,12 @@ export default function AdminVideosPage() {
     setActionId(id);
 
     try {
-      const { error } =
-        await supabase
-          .from("videos")
-          .delete()
-          .eq("id", id);
+      const {
+        error,
+      } = await supabase
+        .from("videos")
+        .delete()
+        .eq("id", id);
 
       if (error) {
         console.error(
@@ -632,7 +728,8 @@ export default function AdminVideosPage() {
         );
 
         setErrorMessage(
-          error.message
+          error.message ||
+            "Unable to delete video campaign."
         );
 
         return;
@@ -707,12 +804,9 @@ export default function AdminVideosPage() {
     <main className="min-h-screen bg-[#070b10] px-3 py-5 text-white sm:px-6 sm:py-8">
       <div className="mx-auto max-w-7xl">
 
-        {/* =================================================
-            HEADER
-            ================================================= */}
+        {/* HEADER */}
 
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
           <div className="flex items-center gap-3">
 
             <button
@@ -727,7 +821,6 @@ export default function AdminVideosPage() {
 
             <div>
               <div className="flex items-center gap-2">
-
                 <Video
                   size={22}
                   className="text-blue-500"
@@ -736,7 +829,6 @@ export default function AdminVideosPage() {
                 <h1 className="text-2xl font-bold sm:text-3xl">
                   Video Campaigns
                 </h1>
-
               </div>
 
               <p className="mt-1 text-sm text-slate-500">
@@ -745,7 +837,6 @@ export default function AdminVideosPage() {
                 EarnNova profit.
               </p>
             </div>
-
           </div>
 
           <button
@@ -767,15 +858,11 @@ export default function AdminVideosPage() {
 
             Refresh
           </button>
-
         </div>
 
-        {/* =================================================
-            EARNNOVA VIDEO RULE
-            ================================================= */}
+        {/* VIDEO RULE */}
 
         <section className="mb-6 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5">
-
           <div className="flex items-start gap-3">
 
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
@@ -788,29 +875,28 @@ export default function AdminVideosPage() {
               </h2>
 
               <p className="mt-1 text-sm leading-6 text-slate-400">
-                Tasks aur videos separate earning systems hain.
-                Customer side par maximum{" "}
+                Tasks aur videos
+                separate earning
+                systems hain. Customer
+                side par maximum{" "}
                 <span className="font-bold text-blue-400">
-                  {DAILY_VIDEO_LIMIT} videos per day
+                  {DAILY_VIDEO_LIMIT} videos
+                  per day
                 </span>{" "}
-                allowed hain. Daily limit server-side enforce honi chahiye.
+                allowed hain. Daily
+                limit server-side
+                enforce hoti hai.
               </p>
             </div>
-
           </div>
-
         </section>
 
-        {/* =================================================
-            ADD CAMPAIGN
-            ================================================= */}
+        {/* ADD CAMPAIGN */}
 
         <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl sm:p-6">
 
           <div className="mb-6">
-
             <div className="flex items-center gap-2">
-
               <Plus
                 size={20}
                 className="text-blue-500"
@@ -819,16 +905,15 @@ export default function AdminVideosPage() {
               <h2 className="text-xl font-bold">
                 Add Video Campaign
               </h2>
-
             </div>
 
             <p className="mt-1 text-sm text-slate-500">
               Campaign budget aur
               EarnNova profit ke basis
               par customer reward
-              automatically calculate hoga.
+              automatically calculate
+              hoga.
             </p>
-
           </div>
 
           <form
@@ -839,13 +924,11 @@ export default function AdminVideosPage() {
             {/* VIDEO URL */}
 
             <div>
-
               <label className="mb-2 block text-sm font-medium text-slate-300">
                 YouTube Video Link
               </label>
 
               <div className="relative">
-
                 <Link2
                   size={19}
                   className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"
@@ -861,11 +944,10 @@ export default function AdminVideosPage() {
                   }
                   placeholder="https://youtube.com/watch?v=..."
                   disabled={saving}
+                  autoComplete="off"
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 py-3.5 pl-11 pr-4 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
                 />
-
               </div>
-
             </div>
 
             {/* NUMBERS */}
@@ -875,13 +957,11 @@ export default function AdminVideosPage() {
               {/* TARGET */}
 
               <div>
-
                 <label className="mb-2 block text-sm font-medium text-slate-300">
                   Target Customers
                 </label>
 
                 <div className="relative">
-
                   <Target
                     size={18}
                     className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"
@@ -890,6 +970,7 @@ export default function AdminVideosPage() {
                   <input
                     type="number"
                     min="1"
+                    max="100000000"
                     step="1"
                     value={targetViews}
                     onChange={(e) =>
@@ -900,26 +981,24 @@ export default function AdminVideosPage() {
                     disabled={saving}
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 py-3.5 pl-11 pr-4 text-white outline-none focus:border-blue-500"
                   />
-
                 </div>
 
                 <p className="mt-1.5 text-xs text-slate-600">
-                  Kitne unique customers
-                  ko campaign serve karni hai.
+                  Kitne unique
+                  customers ko
+                  campaign serve karni
+                  hai.
                 </p>
-
               </div>
 
               {/* BUDGET */}
 
               <div>
-
                 <label className="mb-2 block text-sm font-medium text-slate-300">
                   Total Campaign Budget
                 </label>
 
                 <div className="relative">
-
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500">
                     $
                   </span>
@@ -927,6 +1006,7 @@ export default function AdminVideosPage() {
                   <input
                     type="number"
                     min="0.01"
+                    max="1000000"
                     step="0.01"
                     value={totalBudget}
                     onChange={(e) =>
@@ -937,7 +1017,6 @@ export default function AdminVideosPage() {
                     disabled={saving}
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 py-3.5 pl-9 pr-4 text-white outline-none focus:border-blue-500"
                   />
-
                 </div>
 
                 <p className="mt-1.5 text-xs text-slate-600">
@@ -945,19 +1024,16 @@ export default function AdminVideosPage() {
                   EarnNova profit isi
                   budget se niklega.
                 </p>
-
               </div>
 
               {/* PROFIT */}
 
               <div>
-
                 <label className="mb-2 block text-sm font-medium text-slate-300">
                   EarnNova Profit
                 </label>
 
                 <div className="relative">
-
                   <TrendingUp
                     size={18}
                     className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"
@@ -981,7 +1057,6 @@ export default function AdminVideosPage() {
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500">
                     %
                   </span>
-
                 </div>
 
                 <p className="mt-1.5 text-xs text-slate-600">
@@ -989,9 +1064,7 @@ export default function AdminVideosPage() {
                   30% = $30 EarnNova
                   profit.
                 </p>
-
               </div>
-
             </div>
 
             {/* CALCULATION */}
@@ -999,7 +1072,6 @@ export default function AdminVideosPage() {
             <div className="grid gap-3 sm:grid-cols-3">
 
               <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
-
                 <p className="text-xs font-medium text-slate-500">
                   Customer Pool
                 </p>
@@ -1010,11 +1082,9 @@ export default function AdminVideosPage() {
                     2
                   )}
                 </p>
-
               </div>
 
               <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-
                 <p className="text-xs font-medium text-slate-500">
                   Per Customer Reward
                 </p>
@@ -1025,11 +1095,9 @@ export default function AdminVideosPage() {
                     6
                   )}
                 </p>
-
               </div>
 
               <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4">
-
                 <p className="text-xs font-medium text-slate-500">
                   EarnNova Profit
                 </p>
@@ -1040,9 +1108,7 @@ export default function AdminVideosPage() {
                     2
                   )}
                 </p>
-
               </div>
-
             </div>
 
             {/* SUBMIT */}
@@ -1052,63 +1118,49 @@ export default function AdminVideosPage() {
               disabled={saving}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-
               {saving ? (
                 <>
                   <Loader2
                     size={19}
                     className="animate-spin"
                   />
-
                   Creating Campaign...
                 </>
               ) : (
                 <>
                   <Plus size={19} />
-
                   Add Video Campaign
                 </>
               )}
-
             </button>
-
           </form>
-
         </section>
 
-        {/* =================================================
-            MESSAGES
-            ================================================= */}
+        {/* MESSAGES */}
 
         {message && (
           <div className="mb-5 flex items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-400">
-
             <CheckCircle2
               size={19}
               className="mt-0.5 shrink-0"
             />
 
             <span>{message}</span>
-
           </div>
         )}
 
         {errorMessage && (
           <div className="mb-5 flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-
             <XCircle
               size={19}
               className="mt-0.5 shrink-0"
             />
 
             <span>{errorMessage}</span>
-
           </div>
         )}
 
-        {/* =================================================
-            STATS
-            ================================================= */}
+        {/* STATS */}
 
         <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
 
@@ -1153,19 +1205,14 @@ export default function AdminVideosPage() {
               2
             )}`}
           />
-
         </div>
 
-        {/* =================================================
-            CAMPAIGN BUDGET SUMMARY
-            ================================================= */}
+        {/* CAMPAIGN BUDGET SUMMARY */}
 
         <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-
           <div className="flex items-center justify-between gap-3">
 
             <div>
-
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                 Campaign Budget
               </p>
@@ -1176,36 +1223,30 @@ export default function AdminVideosPage() {
                   2
                 )}
               </p>
-
             </div>
 
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
               <Wallet size={20} />
             </div>
-
           </div>
-
         </div>
 
-        {/* =================================================
-            VIDEO LIBRARY
-            ================================================= */}
+        {/* VIDEO LIBRARY */}
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-xl">
 
           <div className="flex flex-col gap-2 border-b border-slate-800 p-5 sm:flex-row sm:items-center sm:justify-between">
 
             <div>
-
               <h2 className="text-xl font-bold">
                 Video Campaign Library
               </h2>
 
               <p className="mt-1 text-sm text-slate-500">
                 Har campaign ka budget,
-                reward aur viewer progress.
+                reward aur viewer
+                progress.
               </p>
-
             </div>
 
             <div className="text-sm text-slate-500">
@@ -1214,16 +1255,13 @@ export default function AdminVideosPage() {
                 ? ""
                 : "s"}
             </div>
-
           </div>
 
           {/* LOADING */}
 
           {loading ? (
             <div className="flex min-h-[250px] items-center justify-center">
-
               <div className="text-center">
-
                 <Loader2
                   size={28}
                   className="mx-auto animate-spin text-blue-500"
@@ -1232,24 +1270,18 @@ export default function AdminVideosPage() {
                 <p className="mt-3 text-sm text-slate-500">
                   Loading campaigns...
                 </p>
-
               </div>
-
             </div>
-
           ) : videos.length === 0 ? (
-
             /* EMPTY */
 
             <div className="flex min-h-[280px] flex-col items-center justify-center px-5 text-center">
 
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-800">
-
                 <Video
                   size={28}
                   className="text-slate-500"
                 />
-
               </div>
 
               <h3 className="mt-4 text-lg font-semibold">
@@ -1261,18 +1293,13 @@ export default function AdminVideosPage() {
                 YouTube video campaign
                 create karo.
               </p>
-
             </div>
-
           ) : (
-
             /* LIST */
 
             <div className="divide-y divide-slate-800">
-
               {videos.map(
                 (video) => {
-
                   const progress =
                     video.target_views >
                     0
@@ -1335,12 +1362,18 @@ export default function AdminVideosPage() {
                               </span>
                             )}
 
+                            {!VALID_VIDEO_STATUSES.has(
+                              video.status
+                            ) && (
+                              <span className="rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-400">
+                                Invalid Status
+                              </span>
+                            )}
                           </div>
 
                           {/* LINK */}
 
                           <div className="mt-3 flex items-center gap-2">
-
                             <Link2
                               size={17}
                               className="shrink-0 text-red-500"
@@ -1358,9 +1391,7 @@ export default function AdminVideosPage() {
                                 video.video_url
                               }
                             </a>
-
                           </div>
-
                         </div>
 
                         {/* ACTIONS */}
@@ -1378,7 +1409,6 @@ export default function AdminVideosPage() {
                             <ExternalLink
                               size={16}
                             />
-
                             Open
                           </a>
 
@@ -1392,11 +1422,13 @@ export default function AdminVideosPage() {
                             disabled={
                               busy ||
                               video.status ===
-                                "completed"
+                                "completed" ||
+                              !VALID_VIDEO_STATUSES.has(
+                                video.status
+                              )
                             }
                             className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-medium text-slate-300 transition hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                           >
-
                             {busy ? (
                               <Loader2
                                 size={16}
@@ -1412,7 +1444,6 @@ export default function AdminVideosPage() {
                             "active"
                               ? "Pause"
                               : "Activate"}
-
                           </button>
 
                           <button
@@ -1424,8 +1455,8 @@ export default function AdminVideosPage() {
                             }
                             disabled={busy}
                             className="flex items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-red-400 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label={`Delete campaign ${video.id}`}
                           >
-
                             {busy ? (
                               <Loader2
                                 size={17}
@@ -1436,11 +1467,8 @@ export default function AdminVideosPage() {
                                 size={17}
                               />
                             )}
-
                           </button>
-
                         </div>
-
                       </div>
 
                       {/* PROGRESS */}
@@ -1450,7 +1478,6 @@ export default function AdminVideosPage() {
                         <div className="mb-2 flex items-center justify-between gap-3">
 
                           <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
-
                             <Eye
                               size={17}
                               className="text-blue-400"
@@ -1460,7 +1487,6 @@ export default function AdminVideosPage() {
                             {" / "}
                             {video.target_views.toLocaleString()}
                             {" unique viewers"}
-
                           </div>
 
                           <span className="text-sm font-bold text-blue-400">
@@ -1469,25 +1495,21 @@ export default function AdminVideosPage() {
                             )}
                             %
                           </span>
-
                         </div>
 
                         <div className="h-2.5 overflow-hidden rounded-full bg-slate-800">
-
                           <div
                             className="h-full rounded-full bg-blue-600 transition-all"
                             style={{
                               width: `${progress}%`,
                             }}
                           />
-
                         </div>
 
                         <p className="mt-2 text-xs text-slate-600">
                           {remaining.toLocaleString()}{" "}
                           viewers remaining
                         </p>
-
                       </div>
 
                       {/* FINANCIAL INFO */}
@@ -1528,7 +1550,6 @@ export default function AdminVideosPage() {
                             2
                           )}%`}
                         />
-
                       </div>
 
                       {/* DATE */}
@@ -1541,17 +1562,13 @@ export default function AdminVideosPage() {
                           ).toLocaleString()}
                         </p>
                       )}
-
                     </div>
                   );
                 }
               )}
-
             </div>
           )}
-
         </section>
-
       </div>
     </main>
   );
@@ -1574,11 +1591,9 @@ function StatCard({
     <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
 
       <div className="flex items-center justify-between">
-
         <div className="text-slate-500">
           {icon}
         </div>
-
       </div>
 
       <p className="mt-4 text-xs font-medium text-slate-500">
@@ -1588,7 +1603,6 @@ function StatCard({
       <p className="mt-1 text-xl font-bold text-white">
         {value}
       </p>
-
     </div>
   );
 }
@@ -1614,7 +1628,6 @@ function InfoBox({
       <p className="mt-1 text-sm font-bold text-slate-200">
         {value}
       </p>
-
     </div>
   );
 }

@@ -26,23 +26,38 @@ type Task = {
   created_at: string;
 };
 
-/*
- * EarnNova current rule:
- * Maximum 10 tasks per day.
- *
- * Task reward is intentionally NOT shown to customers.
- * The actual reward remains server-side.
- */
+type TaskRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  reward: number | string | null;
+  task_url: string | null;
+  status: string;
+  created_at: string;
+};
+
+type TaskCompletionRow = {
+  task_id: string;
+};
+
 const DAILY_TASK_LIMIT = 10;
+
+const ACTIVE_MEMBERSHIPS = new Set([
+  "Starter",
+  "Basic",
+  "Pro",
+  "Premium",
+  "VIP",
+]);
+
+const supabase = createClient();
 
 export default function TasksPage() {
   const router = useRouter();
-  const supabase = createClient();
 
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [completedTaskIds, setCompletedTaskIds] = useState<string[]>(
-    []
-  );
+  const [completedTaskIds, setCompletedTaskIds] =
+    useState<string[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -63,7 +78,9 @@ export default function TasksPage() {
 
     try {
       /*
+       * =====================================================
        * AUTH
+       * =====================================================
        */
 
       const {
@@ -77,32 +94,124 @@ export default function TasksPage() {
       }
 
       /*
-       * LOAD ACTIVE TASKS
+       * =====================================================
+       * PROFILE / ACTIVATION CHECK
+       * =====================================================
        *
-       * Reward is loaded because it belongs to the task record,
-       * but it is NEVER rendered to the customer.
+       * Tasks are an earning feature.
+       * Only active paid memberships can use them.
        */
-      const { data: taskData, error: taskError } =
-        await supabase
-          .from("tasks")
-          .select(
-            `
-              id,
-              title,
-              description,
-              reward,
-              task_url,
-              status,
-              created_at
-            `
-          )
-          .eq("status", "active")
-          .order("created_at", {
-            ascending: false,
-          });
+
+      const {
+        data: profile,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select(
+          "wallet, membership, is_blocked, block_reason"
+        )
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error(
+          "PROFILE ERROR:",
+          profileError
+        );
+
+        setErrorMessage(
+          "Unable to verify your account."
+        );
+
+        return;
+      }
+
+      if (!profile) {
+        setErrorMessage(
+          "Your account profile could not be found."
+        );
+
+        return;
+      }
+
+      /*
+       * =====================================================
+       * BLOCKED ACCOUNT
+       * =====================================================
+       */
+
+      if (profile.is_blocked === true) {
+        await supabase.auth.signOut();
+
+        if (typeof window !== "undefined") {
+          localStorage.removeItem(
+            "earnNovaLoggedIn"
+          );
+          localStorage.removeItem(
+            "earnNovaUserEmail"
+          );
+          localStorage.removeItem(
+            "earnNovaUserId"
+          );
+          localStorage.removeItem(
+            "earnNovaUserName"
+          );
+        }
+
+        router.replace("/login");
+        return;
+      }
+
+      /*
+       * =====================================================
+       * ACTIVE MEMBERSHIP
+       * =====================================================
+       */
+
+      const membership = String(
+        profile.membership || ""
+      ).trim();
+
+      if (!ACTIVE_MEMBERSHIPS.has(membership)) {
+        router.replace("/plans");
+        return;
+      }
+
+      /*
+       * =====================================================
+       * LOAD ACTIVE TASKS
+       * =====================================================
+       *
+       * Reward is loaded because it belongs to the
+       * task record, but it is NEVER rendered.
+       */
+
+      const {
+        data: taskData,
+        error: taskError,
+      } = await supabase
+        .from("tasks")
+        .select(
+          `
+            id,
+            title,
+            description,
+            reward,
+            task_url,
+            status,
+            created_at
+          `
+        )
+        .eq("status", "active")
+        .order("created_at", {
+          ascending: false,
+        });
 
       if (taskError) {
-        console.error("TASK ERROR:", taskError);
+        console.error(
+          "TASK ERROR:",
+          taskError
+        );
 
         setErrorMessage(
           taskError.message ||
@@ -112,15 +221,24 @@ export default function TasksPage() {
         return;
       }
 
+      const taskRows =
+        (taskData || []) as TaskRow[];
+
       setTasks(
-        (taskData || []).map((task) => ({
-          ...task,
-          reward: Number(task.reward ?? 0),
-        }))
+        taskRows.map(
+          (task: TaskRow) => ({
+            ...task,
+            reward: Number(
+              task.reward ?? 0
+            ),
+          })
+        )
       );
 
       /*
+       * =====================================================
        * TODAY START
+       * =====================================================
        */
 
       const startOfDay = new Date();
@@ -133,11 +251,14 @@ export default function TasksPage() {
       );
 
       /*
-       * LOAD TODAY'S COMPLETED TASKS
+       * =====================================================
+       * TODAY'S COMPLETED TASKS
+       * =====================================================
        *
-       * This is only for UI filtering.
+       * This is used for UI filtering only.
        * Server-side duplicate protection should also exist.
        */
+
       const {
         data: completionData,
         error: completionError,
@@ -157,9 +278,13 @@ export default function TasksPage() {
         );
       }
 
+      const completionRows =
+        (completionData || []) as TaskCompletionRow[];
+
       setCompletedTaskIds(
-        (completionData || []).map((item) =>
-          String(item.task_id)
+        completionRows.map(
+          (item: TaskCompletionRow) =>
+            String(item.task_id)
         )
       );
     } catch (error) {
@@ -178,10 +303,13 @@ export default function TasksPage() {
   }
 
   /*
+   * =====================================================
    * OPEN TASK
+   * =====================================================
    *
    * Opening a task does NOT complete it.
    */
+
   function openTask(task: Task) {
     if (!task.task_url) {
       return;
@@ -195,11 +323,13 @@ export default function TasksPage() {
   }
 
   /*
+   * =====================================================
    * AVAILABLE TASKS
+   * =====================================================
    */
 
   const availableTasks = tasks.filter(
-    (task) =>
+    (task: Task) =>
       !completedTaskIds.includes(
         String(task.id)
       )
@@ -209,34 +339,44 @@ export default function TasksPage() {
     completedTaskIds.length;
 
   const remainingToday = Math.max(
-    DAILY_TASK_LIMIT - completedToday,
+    DAILY_TASK_LIMIT -
+      completedToday,
     0
   );
 
   /*
    * Only show enough tasks to respect
-   * today's 10-task limit.
+   * today's 10-task UI limit.
    */
+
   const visibleTasks =
     availableTasks.slice(
       0,
       remainingToday
     );
 
+  /*
+   * =====================================================
+   * PAGE
+   * =====================================================
+   */
+
   return (
     <main className="min-h-screen bg-[#070b10] px-3 py-4 text-white sm:px-5 sm:py-7">
       <div className="mx-auto w-full max-w-[620px]">
 
-        {/* =====================================================
+        {/* =================================================
             HEADER
-        ====================================================== */}
+        ================================================= */}
 
         <header className="mb-6 flex items-center gap-3">
 
           <button
             type="button"
             onClick={() =>
-              router.push("/dashboard")
+              router.push(
+                "/dashboard"
+              )
             }
             aria-label="Back to Dashboard"
             className="
@@ -284,7 +424,10 @@ export default function TasksPage() {
 
           <div className="min-w-0">
             <h1 className="text-lg font-black tracking-tight">
-              Earn<span className="text-blue-500">Nova</span>
+              Earn
+              <span className="text-blue-500">
+                Nova
+              </span>
             </h1>
 
             <p className="text-[9px] font-medium uppercase tracking-[0.24em] text-slate-600">
@@ -329,16 +472,18 @@ export default function TasksPage() {
           </button>
         </header>
 
-        {/* =====================================================
+        {/* =================================================
             PAGE TITLE
-        ====================================================== */}
+        ================================================= */}
 
         <section className="mb-5">
 
           <div className="flex items-center gap-3">
 
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
-              <BriefcaseBusiness size={21} />
+              <BriefcaseBusiness
+                size={21}
+              />
             </div>
 
             <div>
@@ -354,14 +499,15 @@ export default function TasksPage() {
           </div>
 
           <p className="mt-3 text-xs leading-5 text-slate-500">
-            Complete available tasks and earn rewards
-            after successful verification.
+            Complete available tasks and
+            earn rewards after successful
+            verification.
           </p>
         </section>
 
-        {/* =====================================================
+        {/* =================================================
             DAILY LIMIT
-        ====================================================== */}
+        ================================================= */}
 
         {!loading &&
           !errorMessage && (
@@ -370,7 +516,9 @@ export default function TasksPage() {
               <div className="flex items-center gap-3">
 
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
-                  <ShieldCheck size={19} />
+                  <ShieldCheck
+                    size={19}
+                  />
                 </div>
 
                 <div className="min-w-0 flex-1">
@@ -379,7 +527,8 @@ export default function TasksPage() {
                   </p>
 
                   <p className="mt-0.5 text-sm font-black text-white">
-                    {DAILY_TASK_LIMIT} Tasks
+                    {DAILY_TASK_LIMIT}{" "}
+                    Tasks
                   </p>
                 </div>
 
@@ -419,16 +568,17 @@ export default function TasksPage() {
                 </span>
 
                 <span className="text-[9px] font-bold text-slate-500">
-                  {remainingToday} remaining
+                  {remainingToday}{" "}
+                  remaining
                 </span>
               </div>
 
             </section>
           )}
 
-        {/* =====================================================
+        {/* =================================================
             LOADING
-        ====================================================== */}
+        ================================================= */}
 
         {loading && (
           <div className="rounded-2xl border border-slate-800 bg-[#11151b] p-8 text-center">
@@ -445,16 +595,18 @@ export default function TasksPage() {
           </div>
         )}
 
-        {/* =====================================================
+        {/* =================================================
             ERROR
-        ====================================================== */}
+        ================================================= */}
 
         {!loading &&
           errorMessage && (
             <div className="rounded-2xl border border-red-500/20 bg-[#11151b] p-6 text-center">
 
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/10 text-red-400">
-                <XCircle size={23} />
+                <XCircle
+                  size={23}
+                />
               </div>
 
               <h3 className="mt-4 text-base font-bold">
@@ -478,9 +630,9 @@ export default function TasksPage() {
             </div>
           )}
 
-        {/* =====================================================
+        {/* =================================================
             DAILY LIMIT REACHED
-        ====================================================== */}
+        ================================================= */}
 
         {!loading &&
           !errorMessage &&
@@ -497,17 +649,18 @@ export default function TasksPage() {
 
               <p className="mt-2 text-xs leading-5 text-slate-500">
                 You have completed your{" "}
-                {DAILY_TASK_LIMIT} tasks for today.
-                More tasks will be available after
-                the daily reset.
+                {DAILY_TASK_LIMIT} tasks
+                for today. More tasks will
+                be available after the daily
+                reset.
               </p>
 
             </div>
           )}
 
-        {/* =====================================================
+        {/* =================================================
             NO TASKS
-        ====================================================== */}
+        ================================================= */}
 
         {!loading &&
           !errorMessage &&
@@ -516,7 +669,9 @@ export default function TasksPage() {
             <div className="rounded-2xl border border-slate-800 bg-[#11151b] p-8 text-center">
 
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-800/60 text-slate-500">
-                <BriefcaseBusiness size={25} />
+                <BriefcaseBusiness
+                  size={25}
+                />
               </div>
 
               <h3 className="mt-4 text-base font-bold">
@@ -524,16 +679,17 @@ export default function TasksPage() {
               </h3>
 
               <p className="mt-2 text-xs leading-5 text-slate-500">
-                There are no new eligible tasks right
-                now. Please check again later.
+                There are no new eligible
+                tasks right now. Please check
+                again later.
               </p>
 
             </div>
           )}
 
-        {/* =====================================================
+        {/* =================================================
             TASK LIST
-        ====================================================== */}
+        ================================================= */}
 
         {!loading &&
           !errorMessage &&
@@ -541,99 +697,111 @@ export default function TasksPage() {
           visibleTasks.length > 0 && (
             <section className="space-y-2">
 
-              {visibleTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="
-                    group
-                    flex
-                    items-center
-                    gap-3
-                    rounded-2xl
-                    border
-                    border-slate-800
-                    bg-[#11151b]
-                    p-3.5
-                    transition
-                    hover:border-blue-500/30
-                    hover:bg-blue-500/[0.03]
-                  "
-                >
+              {visibleTasks.map(
+                (task: Task) => (
+                  <div
+                    key={task.id}
+                    className="
+                      group
+                      flex
+                      items-center
+                      gap-3
+                      rounded-2xl
+                      border
+                      border-slate-800
+                      bg-[#11151b]
+                      p-3.5
+                      transition
+                      hover:border-blue-500/30
+                      hover:bg-blue-500/[0.03]
+                    "
+                  >
 
-                  {/* TASK ICON */}
+                    {/* TASK ICON */}
 
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
-                    <Sparkles size={20} />
-                  </div>
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
+                      <Sparkles
+                        size={20}
+                      />
+                    </div>
 
-                  {/* TASK INFO */}
+                    {/* TASK INFO */}
 
-                  <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1">
 
-                    <h3 className="truncate text-sm font-bold text-white">
-                      {task.title}
-                    </h3>
+                      <h3 className="truncate text-sm font-bold text-white">
+                        {task.title}
+                      </h3>
 
-                    <div className="mt-1 flex items-center gap-2">
+                      <div className="mt-1 flex items-center gap-2">
 
-                      <span className="flex shrink-0 items-center gap-1 text-[9px] font-semibold text-green-400">
-                        <CheckCircle2 size={10} />
-                        Available
-                      </span>
+                        <span className="flex shrink-0 items-center gap-1 text-[9px] font-semibold text-green-400">
+                          <CheckCircle2
+                            size={10}
+                          />
+                          Available
+                        </span>
 
-                      {task.description && (
-                        <>
-                          <span className="text-slate-700">
-                            •
-                          </span>
+                        {task.description && (
+                          <>
+                            <span className="text-slate-700">
+                              •
+                            </span>
 
-                          <p className="truncate text-[9px] text-slate-600">
-                            {task.description}
-                          </p>
-                        </>
-                      )}
+                            <p className="truncate text-[9px] text-slate-600">
+                              {
+                                task.description
+                              }
+                            </p>
+                          </>
+                        )}
+
+                      </div>
 
                     </div>
 
-                  </div>
+                    {/* START BUTTON */}
 
-                  {/* START BUTTON */}
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      openTask(task)
-                    }
-                    disabled={!task.task_url}
-                    aria-label={`Start ${task.title}`}
-                    className={`
-                      flex
-                      h-9
-                      w-9
-                      shrink-0
-                      items-center
-                      justify-center
-                      rounded-xl
-                      transition
-                      ${
-                        task.task_url
-                          ? "bg-blue-600 text-white hover:bg-blue-500"
-                          : "cursor-not-allowed bg-slate-800 text-slate-600"
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openTask(task)
                       }
-                    `}
-                  >
-                    <ArrowRight size={16} />
-                  </button>
+                      disabled={
+                        !task.task_url
+                      }
+                      aria-label={`Start ${task.title}`}
+                      className={`
+                        flex
+                        h-9
+                        w-9
+                        shrink-0
+                        items-center
+                        justify-center
+                        rounded-xl
+                        transition
+                        ${
+                          task.task_url
+                            ? "bg-blue-600 text-white hover:bg-blue-500"
+                            : "cursor-not-allowed bg-slate-800 text-slate-600"
+                        }
+                      `}
+                    >
+                      <ArrowRight
+                        size={16}
+                      />
+                    </button>
 
-                </div>
-              ))}
+                  </div>
+                )
+              )}
 
             </section>
           )}
 
-        {/* =====================================================
+        {/* =================================================
             SECURITY INFO
-        ====================================================== */}
+        ================================================= */}
 
         {!loading &&
           !errorMessage &&
@@ -654,10 +822,11 @@ export default function TasksPage() {
                   </p>
 
                   <p className="mt-2 text-xs leading-5 text-slate-500">
-                    Opening a task does not automatically
-                    complete it. Task completion is verified
-                    before any reward is credited to your
-                    wallet.
+                    Opening a task does not
+                    automatically complete it.
+                    Task completion is verified
+                    before any reward is credited
+                    to your wallet.
                   </p>
 
                 </div>
@@ -667,9 +836,9 @@ export default function TasksPage() {
             </div>
           )}
 
-        {/* =====================================================
+        {/* =================================================
             FOOTER
-        ====================================================== */}
+        ================================================= */}
 
         <footer className="py-7 text-center">
 

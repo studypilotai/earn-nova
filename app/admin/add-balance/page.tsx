@@ -16,12 +16,44 @@ import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
+const MAX_ADD_BALANCE = 1_000_000;
+
 type RpcResult = {
   success?: boolean;
   message?: string;
   amount_added?: number | string;
   new_wallet?: number | string;
 };
+
+function getRpcResult(data: unknown): RpcResult | null {
+  if (Array.isArray(data)) {
+    const first = data[0];
+
+    if (
+      first &&
+      typeof first === "object"
+    ) {
+      return first as RpcResult;
+    }
+
+    return null;
+  }
+
+  if (
+    data &&
+    typeof data === "object"
+  ) {
+    return data as RpcResult;
+  }
+
+  return null;
+}
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+    email
+  );
+}
 
 export default function AddBalancePage() {
   const router = useRouter();
@@ -30,71 +62,94 @@ export default function AddBalancePage() {
   const [amount, setAmount] = useState("");
 
   const [loading, setLoading] = useState(false);
-  const [checkingAdmin, setCheckingAdmin] = useState(true);
+  const [checkingAdmin, setCheckingAdmin] =
+    useState(true);
 
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   /* =========================================================
      ADMIN CHECK
-     ========================================================= */
+  ========================================================= */
 
-  const checkAdmin = useCallback(async () => {
-    setCheckingAdmin(true);
+  const checkAdmin = useCallback(
+    async () => {
+      try {
+        setCheckingAdmin(true);
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
 
-    if (userError || !user) {
-      router.replace("/admin/login");
-      return false;
-    }
+        if (userError || !user) {
+          router.replace("/admin/login");
+          return false;
+        }
 
-    const {
-      data: profile,
-      error: profileError,
-    } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
+        const {
+          data: profile,
+          error: profileError,
+        } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle();
 
-    if (profileError) {
-      console.error(
-        "ADMIN PROFILE ERROR:",
-        profileError
-      );
+        if (profileError) {
+          console.error(
+            "ADMIN PROFILE ERROR:",
+            profileError
+          );
 
-      setError(
-        profileError.message ||
-          "Unable to verify admin account."
-      );
+          setError(
+            profileError.message ||
+              "Unable to verify admin account."
+          );
 
-      setCheckingAdmin(false);
-      return false;
-    }
+          return false;
+        }
 
-    if (!profile || profile.role !== "admin") {
-      router.replace("/dashboard");
-      return false;
-    }
+        if (
+          !profile ||
+          profile.role !== "admin"
+        ) {
+          await supabase.auth.signOut();
+          router.replace("/admin/login");
+          return false;
+        }
 
-    setCheckingAdmin(false);
-    return true;
-  }, [router]);
+        return true;
+      } catch (err) {
+        console.error(
+          "ADMIN CHECK ERROR:",
+          err
+        );
+
+        setError(
+          "Unable to verify admin access."
+        );
+
+        return false;
+      } finally {
+        setCheckingAdmin(false);
+      }
+    },
+    [router]
+  );
 
   useEffect(() => {
-    checkAdmin();
+    void checkAdmin();
   }, [checkAdmin]);
 
   /* =========================================================
      ADD BALANCE
-     ========================================================= */
+  ========================================================= */
 
   async function handleAddBalance() {
-    if (loading) return;
+    if (loading || checkingAdmin) {
+      return;
+    }
 
     setMessage("");
     setError("");
@@ -103,13 +158,15 @@ export default function AddBalancePage() {
       .trim()
       .toLowerCase();
 
+    const rawAmount = amount.trim();
+
     const numericAmount = Number(
-      amount
+      rawAmount
     );
 
     /* =======================================================
        VALIDATION
-       ======================================================= */
+    ======================================================= */
 
     if (!cleanEmail) {
       setError(
@@ -118,18 +175,21 @@ export default function AddBalancePage() {
       return;
     }
 
-    if (
-      !cleanEmail.includes("@") ||
-      !cleanEmail.includes(".")
-    ) {
+    if (!isValidEmail(cleanEmail)) {
       setError(
         "Please enter a valid email address."
       );
       return;
     }
 
+    if (!rawAmount) {
+      setError(
+        "Please enter an amount."
+      );
+      return;
+    }
+
     if (
-      !amount.trim() ||
       !Number.isFinite(numericAmount)
     ) {
       setError(
@@ -138,25 +198,64 @@ export default function AddBalancePage() {
       return;
     }
 
-    if (numericAmount <= 0) {
+    if (
+      numericAmount <= 0
+    ) {
       setError(
         "Amount must be greater than $0."
       );
       return;
     }
 
-    if (numericAmount > 1000000) {
+    if (
+      numericAmount > MAX_ADD_BALANCE
+    ) {
       setError(
         "Amount is too large."
       );
       return;
     }
 
+    if (
+      !Number.isInteger(
+        Math.round(
+          numericAmount * 100
+        )
+      )
+    ) {
+      setError(
+        "Invalid amount."
+      );
+      return;
+    }
+
+    /*
+     * Keep wallet amounts at maximum
+     * two decimal places.
+     */
+    const roundedAmount =
+      Math.round(
+        numericAmount * 100
+      ) / 100;
+
+    if (
+      roundedAmount <= 0 ||
+      !Number.isFinite(
+        roundedAmount
+      )
+    ) {
+      setError(
+        "Invalid amount."
+      );
+      return;
+    }
+
     /* =======================================================
        ENSURE ADMIN
-       ======================================================= */
+    ======================================================= */
 
-    const isAdmin = await checkAdmin();
+    const isAdmin =
+      await checkAdmin();
 
     if (!isAdmin) {
       return;
@@ -164,16 +263,17 @@ export default function AddBalancePage() {
 
     /* =======================================================
        CONFIRMATION
-       ======================================================= */
+    ======================================================= */
 
-    const confirmed = window.confirm(
-      `Confirm balance addition?\n\n` +
-        `User: ${cleanEmail}\n` +
-        `Amount: $${numericAmount.toFixed(
-          2
-        )}\n\n` +
-        `This will directly increase the user's wallet balance.`
-    );
+    const confirmed =
+      window.confirm(
+        `Confirm balance addition?\n\n` +
+          `User: ${cleanEmail}\n` +
+          `Amount: $${roundedAmount.toFixed(
+            2
+          )}\n\n` +
+          `This will directly increase the user's wallet balance.`
+      );
 
     if (!confirmed) {
       return;
@@ -185,13 +285,16 @@ export default function AddBalancePage() {
       /* =====================================================
          SECURE ADMIN RPC
 
-         The database function must handle:
-         - current authenticated user
-         - admin role verification
-         - target user lookup
+         Database function is responsible for:
+         - authentication
+         - admin authorization
+         - customer lookup
+         - customer role verification
+         - wallet locking
          - wallet update
          - transaction safety
-         ===================================================== */
+         - amount validation
+      ===================================================== */
 
       const {
         data,
@@ -200,7 +303,7 @@ export default function AddBalancePage() {
         "admin_add_balance",
         {
           p_email: cleanEmail,
-          p_amount: numericAmount,
+          p_amount: roundedAmount,
         }
       );
 
@@ -217,32 +320,38 @@ export default function AddBalancePage() {
       }
 
       const result =
-        data as RpcResult | null;
+        getRpcResult(data);
 
       if (!result) {
         throw new Error(
-          "No response was returned from the balance function."
+          "No valid response was returned from the balance function."
         );
       }
 
-      if (result.success === false) {
+      if (
+        result.success !== true
+      ) {
         throw new Error(
           result.message ||
             "Unable to add balance."
         );
       }
 
-      const amountAdded = Number(
-        result.amount_added ??
-          numericAmount
-      );
+      const amountAdded =
+        Number(
+          result.amount_added
+        );
 
-      const newWallet = Number(
-        result.new_wallet
-      );
+      const newWallet =
+        Number(
+          result.new_wallet
+        );
 
       if (
-        !Number.isFinite(amountAdded)
+        !Number.isFinite(
+          amountAdded
+        ) ||
+        amountAdded <= 0
       ) {
         throw new Error(
           "Invalid amount returned by the server."
@@ -250,7 +359,10 @@ export default function AddBalancePage() {
       }
 
       if (
-        !Number.isFinite(newWallet)
+        !Number.isFinite(
+          newWallet
+        ) ||
+        newWallet < 0
       ) {
         throw new Error(
           "Invalid wallet balance returned by the server."
@@ -259,7 +371,7 @@ export default function AddBalancePage() {
 
       /* =====================================================
          SUCCESS
-         ===================================================== */
+      ===================================================== */
 
       setMessage(
         `$${amountAdded.toFixed(
@@ -277,7 +389,9 @@ export default function AddBalancePage() {
         err
       );
 
-      if (err instanceof Error) {
+      if (
+        err instanceof Error
+      ) {
         setError(
           err.message ||
             "Something went wrong while adding balance."
@@ -293,8 +407,8 @@ export default function AddBalancePage() {
   }
 
   /* =========================================================
-     LOADING / ADMIN CHECK
-     ========================================================= */
+     LOADING
+  ========================================================= */
 
   if (checkingAdmin) {
     return (
@@ -313,20 +427,17 @@ export default function AddBalancePage() {
 
   /* =========================================================
      PAGE
-     ========================================================= */
+  ========================================================= */
 
   return (
     <main className="min-h-screen bg-[#f8fafc] text-slate-900">
-
       {/* =====================================================
           HEADER
-          ===================================================== */}
+      ====================================================== */}
 
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex min-h-20 max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
-
           <div className="flex items-center gap-4">
-
             <button
               type="button"
               onClick={() =>
@@ -347,35 +458,29 @@ export default function AddBalancePage() {
                 Add funds directly to a user's wallet
               </p>
             </div>
-
           </div>
 
           <div className="hidden items-center gap-2 rounded-xl bg-blue-50 px-4 py-2 text-sm font-bold text-blue-600 sm:flex">
             <Wallet size={17} />
             Wallet Control
           </div>
-
         </div>
       </header>
 
       {/* =====================================================
           CONTENT
-          ===================================================== */}
+      ====================================================== */}
 
       <div className="mx-auto max-w-4xl px-5 py-10 lg:px-8">
-
         {/* ===================================================
             MAIN CARD
-            =================================================== */}
+        =================================================== */}
 
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-
           {/* CARD HEADER */}
 
           <div className="border-b border-slate-200 p-6 sm:p-8">
-
             <div className="flex items-start gap-4">
-
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
                 <UserPlus size={22} />
               </div>
@@ -391,18 +496,13 @@ export default function AddBalancePage() {
                   to their wallet.
                 </p>
               </div>
-
             </div>
-
           </div>
 
           {/* FORM */}
 
           <div className="p-6 sm:p-8">
-
-            {/* =================================================
-                EMAIL
-                ================================================= */}
+            {/* EMAIL */}
 
             <div>
               <label
@@ -413,7 +513,6 @@ export default function AddBalancePage() {
               </label>
 
               <div className="relative">
-
                 <UserPlus
                   size={18}
                   className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
@@ -435,23 +534,20 @@ export default function AddBalancePage() {
                     if (
                       event.key === "Enter"
                     ) {
-                      handleAddBalance();
+                      void handleAddBalance();
                     }
                   }}
                   placeholder="user@example.com"
                   disabled={loading}
+                  maxLength={254}
                   className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:bg-slate-50"
                 />
-
               </div>
             </div>
 
-            {/* =================================================
-                AMOUNT
-                ================================================= */}
+            {/* AMOUNT */}
 
             <div className="mt-5">
-
               <label
                 htmlFor="amount"
                 className="mb-2 block text-sm font-bold text-slate-700"
@@ -460,7 +556,6 @@ export default function AddBalancePage() {
               </label>
 
               <div className="relative">
-
                 <DollarSign
                   size={18}
                   className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
@@ -470,7 +565,7 @@ export default function AddBalancePage() {
                   id="amount"
                   type="number"
                   min="0.01"
-                  max="1000000"
+                  max={MAX_ADD_BALANCE}
                   step="0.01"
                   inputMode="decimal"
                   value={amount}
@@ -485,35 +580,30 @@ export default function AddBalancePage() {
                     if (
                       event.key === "Enter"
                     ) {
-                      handleAddBalance();
+                      void handleAddBalance();
                     }
                   }}
                   placeholder="10.00"
                   disabled={loading}
                   className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:bg-slate-50"
                 />
-
               </div>
 
               <p className="mt-2 text-xs text-slate-400">
                 Balance is maintained and displayed
-                in USD.
+                in USD. Maximum manual addition:
+                $1,000,000.
               </p>
-
             </div>
 
-            {/* =================================================
-                QUICK AMOUNTS
-                ================================================= */}
+            {/* QUICK AMOUNTS */}
 
             <div className="mt-4">
-
               <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">
                 Quick Amount
               </p>
 
               <div className="flex flex-wrap gap-2">
-
                 {[5, 10, 25, 50, 100].map(
                   (value) => (
                     <button
@@ -533,18 +623,13 @@ export default function AddBalancePage() {
                     </button>
                   )
                 )}
-
               </div>
-
             </div>
 
-            {/* =================================================
-                SUCCESS
-                ================================================= */}
+            {/* SUCCESS */}
 
             {message && (
               <div className="mt-6 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-
                 <CheckCircle
                   size={20}
                   className="mt-0.5 shrink-0 text-emerald-600"
@@ -559,17 +644,13 @@ export default function AddBalancePage() {
                     {message}
                   </p>
                 </div>
-
               </div>
             )}
 
-            {/* =================================================
-                ERROR
-                ================================================= */}
+            {/* ERROR */}
 
             {error && (
               <div className="mt-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4">
-
                 <XCircle
                   size={20}
                   className="mt-0.5 shrink-0 text-red-600"
@@ -584,21 +665,21 @@ export default function AddBalancePage() {
                     {error}
                   </p>
                 </div>
-
               </div>
             )}
 
-            {/* =================================================
-                ADD BUTTON
-                ================================================= */}
+            {/* ADD BUTTON */}
 
             <button
               type="button"
-              onClick={handleAddBalance}
-              disabled={loading}
+              onClick={() =>
+                void handleAddBalance()
+              }
+              disabled={
+                loading || checkingAdmin
+              }
               className="mt-7 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-
               {loading ? (
                 <>
                   <Loader2
@@ -615,26 +696,21 @@ export default function AddBalancePage() {
                   Add Balance
                 </>
               )}
-
             </button>
-
           </div>
         </div>
 
         {/* =====================================================
             WARNING / INFO
-            ===================================================== */}
+        ====================================================== */}
 
         <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-
           <div className="flex gap-3">
-
             <div className="mt-0.5 text-amber-600">
               <DollarSign size={20} />
             </div>
 
             <div>
-
               <h3 className="font-black text-amber-800">
                 Wallet Balance Control
               </h3>
@@ -643,19 +719,19 @@ export default function AddBalancePage() {
                 This action directly increases the
                 user's wallet balance. Verify the
                 email and amount before confirming.
+                Every balance addition is processed
+                through the secure admin database
+                function.
               </p>
-
             </div>
-
           </div>
         </div>
 
         {/* =====================================================
             BACK
-            ===================================================== */}
+        ====================================================== */}
 
         <div className="mt-6">
-
           <button
             type="button"
             onClick={() =>
@@ -666,9 +742,7 @@ export default function AddBalancePage() {
             <ArrowLeft size={17} />
             Back to Admin
           </button>
-
         </div>
-
       </div>
     </main>
   );

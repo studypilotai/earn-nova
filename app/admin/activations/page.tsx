@@ -1,52 +1,81 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
-  XCircle,
   Clock3,
-  Loader2,
   RefreshCw,
-  ArrowLeft,
+  Search,
+  ShieldCheck,
+  User,
+  XCircle,
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
+type ActivationStatus = "pending" | "approved" | "rejected";
+
 type Activation = {
   id: string;
   user_id: string;
   amount: number;
-  currency: string;
+  currency: string | null;
   payment_method: string | null;
   payment_reference: string | null;
-  status: string;
+  status: ActivationStatus;
   created_at: string;
-  updated_at: string;
+  updated_at: string | null;
+
+  customer?: {
+    full_name: string | null;
+    email: string | null;
+  };
 };
+
+type FilterType = "all" | ActivationStatus;
+
+const ACTIVE_PLANS = [
+  { price: 2.5, name: "Starter" },
+  { price: 5, name: "Basic" },
+  { price: 10, name: "Pro" },
+  { price: 20, name: "Premium" },
+  { price: 50, name: "VIP" },
+];
+
+function getPlanName(amount: number) {
+  const plan = ACTIVE_PLANS.find(
+    (item) => Math.abs(Number(item.price) - Number(amount)) < 0.001
+  );
+
+  return plan?.name ?? "Unknown Plan";
+}
+
+function formatDate(date: string) {
+  return new Date(date).toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function formatAmount(amount: number, currency: string | null) {
+  return `${currency || "USD"} ${Number(amount).toFixed(2)}`;
+}
 
 export default function AdminActivationsPage() {
   const router = useRouter();
 
-  const [activations, setActivations] = useState<Activation[]>(
-    []
-  );
+  const [activations, setActivations] = useState<Activation[]>([]);
+  const [filter, setFilter] = useState<FilterType>("all");
+  const [search, setSearch] = useState("");
 
   const [loading, setLoading] = useState(true);
-  const [processingId, setProcessingId] = useState<string | null>(
-    null
-  );
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
-  const [filter, setFilter] = useState("all");
-
+  const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
-
-  /* =========================================================
-     CHECK ADMIN
-     ========================================================= */
 
   const checkAdmin = useCallback(async () => {
     const {
@@ -59,203 +88,158 @@ export default function AdminActivationsPage() {
       return false;
     }
 
-    const {
-      data: profile,
-      error: profileError,
-    } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .maybeSingle();
 
     if (profileError) {
-      console.error(
-        "ADMIN PROFILE ERROR:",
-        profileError
-      );
-
-      setErrorMessage(
-        profileError.message ||
-          "Unable to verify admin account."
-      );
-
+      setError(profileError.message);
       return false;
     }
 
-    if (!profile || profile.role !== "admin") {
-      router.replace("/dashboard");
+    if (profile?.role !== "admin") {
+      await supabase.auth.signOut();
+
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("earnNovaLoggedIn");
+        localStorage.removeItem("earnNovaUserEmail");
+        localStorage.removeItem("earnNovaUserName");
+        localStorage.removeItem("earnNovaUserId");
+      }
+
+      router.replace("/admin/login");
       return false;
     }
 
     return true;
   }, [router]);
 
-  /* =========================================================
-     LOAD ACTIVATIONS
-     ========================================================= */
-
   const loadActivations = useCallback(async () => {
     setLoading(true);
-    setErrorMessage("");
+    setError("");
 
-    try {
-      const isAdmin = await checkAdmin();
+    const isAdmin = await checkAdmin();
 
-      if (!isAdmin) {
-        return;
-      }
-
-      const {
-        data,
-        error,
-      } = await supabase
-        .from("activations")
-        .select(
-          `
-            id,
-            user_id,
-            amount,
-            currency,
-            payment_method,
-            payment_reference,
-            status,
-            created_at,
-            updated_at
-          `
-        )
-        .order("created_at", {
-          ascending: false,
-        });
-
-      if (error) {
-        console.error(
-          "LOAD ACTIVATIONS ERROR:",
-          error
-        );
-
-        setActivations([]);
-
-        setErrorMessage(
-          error.message ||
-            "Unable to load activation requests."
-        );
-
-        return;
-      }
-
-      const formatted: Activation[] = (
-        data || []
-      ).map((item) => ({
-        id: String(item.id),
-        user_id: String(item.user_id),
-        amount: Number(item.amount ?? 0),
-        currency: String(
-          item.currency ?? "USD"
-        ).toUpperCase(),
-        payment_method:
-          item.payment_method ?? null,
-        payment_reference:
-          item.payment_reference ?? null,
-        status: String(
-          item.status ?? "pending"
-        ).toLowerCase(),
-        created_at: item.created_at,
-        updated_at: item.updated_at,
-      }));
-
-      setActivations(formatted);
-    } catch (error) {
-      console.error(
-        "LOAD ACTIVATIONS EXCEPTION:",
-        error
-      );
-
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong while loading activations."
-      );
-    } finally {
+    if (!isAdmin) {
       setLoading(false);
+      return;
     }
+
+    const { data, error: activationError } = await supabase
+      .from("activations")
+      .select(
+        `
+        id,
+        user_id,
+        amount,
+        currency,
+        payment_method,
+        payment_reference,
+        status,
+        created_at,
+        updated_at
+      `
+      )
+      .order("created_at", { ascending: false });
+
+    if (activationError) {
+      setError(activationError.message);
+      setLoading(false);
+      return;
+    }
+
+    const rows = (data || []) as Activation[];
+
+    /*
+     * Customer profiles separate fetch:
+     * Is se Supabase relationship/cache issue avoid hota hai.
+     */
+    const userIds = [...new Set(rows.map((item) => item.user_id))];
+
+    let customerMap = new Map<
+      string,
+      { full_name: string | null; email: string | null }
+    >();
+
+    if (userIds.length > 0) {
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles")
+        .select("id, full_name, email")
+        .in("id", userIds);
+
+      if (profilesError) {
+        setError(profilesError.message);
+        setLoading(false);
+        return;
+      }
+
+      customerMap = new Map(
+        (profiles || []).map(
+          (profile: {
+            id: string;
+            full_name: string | null;
+            email: string | null;
+          }) => [
+            profile.id,
+            {
+              full_name: profile.full_name,
+              email: profile.email,
+            },
+          ]
+        )
+      );
+    }
+
+    const enriched = rows.map((activation) => ({
+      ...activation,
+      customer: customerMap.get(activation.user_id) || {
+        full_name: null,
+        email: null,
+      },
+    }));
+
+    setActivations(enriched);
+    setLoading(false);
   }, [checkAdmin]);
 
   useEffect(() => {
     loadActivations();
   }, [loadActivations]);
 
-  /* =========================================================
-     APPROVE ACTIVATION
-     ========================================================= */
+  const approveActivation = async (activation: Activation) => {
+    if (activation.status !== "pending") return;
 
-  async function approveActivation(id: string) {
-    const activation = activations.find(
-      (item) => item.id === id
-    );
-
-    if (!activation) {
-      setErrorMessage(
-        "Activation request not found."
-      );
-      return;
-    }
-
-    if (activation.status !== "pending") {
-      setErrorMessage(
-        "This activation has already been processed."
-      );
-      return;
-    }
+    const planName = getPlanName(Number(activation.amount));
 
     const confirmed = window.confirm(
-      `Approve this activation?\n\n` +
-        `Amount: $${activation.amount.toFixed(
-          2
-        )} ${activation.currency}\n\n` +
-        `The customer's plan will be activated and any eligible referral reward will be processed securely by the database.`
+      `Approve this activation?\n\nCustomer: ${
+        activation.customer?.full_name || "Unknown"
+      }\nPlan: ${planName}\nAmount: ${formatAmount(
+        activation.amount,
+        activation.currency
+      )}\n\nCustomer membership will be activated for 3 months.`
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
-    setProcessingId(id);
+    setProcessingId(activation.id);
+    setError("");
     setMessage("");
-    setErrorMessage("");
 
     try {
-      const {
-        data,
-        error,
-      } = await supabase.rpc(
+      const { data, error: rpcError } = await supabase.rpc(
         "approve_activation",
         {
-          p_activation_id: id,
+          p_activation_id: activation.id,
         }
       );
 
-      if (error) {
-        console.error(
-          "APPROVE ACTIVATION ERROR:",
-          error
-        );
-
-        setErrorMessage(
-          error.message ||
-            "Unable to approve activation."
-        );
-
+      if (rpcError) {
+        setError(rpcError.message);
         return;
       }
-
-      /*
-       * RPC can return:
-       * {
-       *   success: true,
-       *   message: "...",
-       *   referrer_id: "..."
-       * }
-       */
 
       if (
         data &&
@@ -263,810 +247,639 @@ export default function AdminActivationsPage() {
         "success" in data &&
         data.success === false
       ) {
-        const rpcMessage =
-          "message" in data &&
-          typeof data.message === "string"
-            ? data.message
-            : "Activation could not be approved.";
-
-        setErrorMessage(rpcMessage);
-
+        setError(
+          "message" in data
+            ? String(data.message)
+            : "Activation approval failed."
+        );
         return;
       }
 
       setMessage(
-        "Activation approved successfully. The customer plan has been activated."
+        `Activation approved successfully. ${planName} plan is now active for the customer.`
       );
 
       await loadActivations();
-    } catch (error) {
-      console.error(
-        "APPROVE ACTIVATION EXCEPTION:",
-        error
-      );
-
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
           : "Something went wrong while approving activation."
       );
     } finally {
       setProcessingId(null);
     }
-  }
+  };
 
-  /* =========================================================
-     REJECT ACTIVATION
-     ========================================================= */
-
-  async function rejectActivation(id: string) {
-    const activation = activations.find(
-      (item) => item.id === id
-    );
-
-    if (!activation) {
-      setErrorMessage(
-        "Activation request not found."
-      );
-      return;
-    }
-
-    if (activation.status !== "pending") {
-      setErrorMessage(
-        "This activation has already been processed."
-      );
-      return;
-    }
+  const rejectActivation = async (activation: Activation) => {
+    if (activation.status !== "pending") return;
 
     const confirmed = window.confirm(
-      `Reject this activation request?\n\n` +
-        `Amount: $${activation.amount.toFixed(
-          2
-        )} ${activation.currency}`
+      `Reject this activation?\n\nCustomer: ${
+        activation.customer?.full_name || "Unknown"
+      }\nAmount: ${formatAmount(
+        activation.amount,
+        activation.currency
+      )}`
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
-    setProcessingId(id);
+    setProcessingId(activation.id);
+    setError("");
     setMessage("");
-    setErrorMessage("");
 
     try {
       /*
-       * Only change a request that is still pending.
-       * This prevents approving/rejecting the same request
-       * twice from the UI.
+       * Reject RPC bhi admin authorization enforce karta hai.
+       * Direct browser UPDATE intentionally use nahi kiya gaya.
        */
-
-      const {
-        data,
-        error,
-      } = await supabase
-        .from("activations")
-        .update({
-          status: "rejected",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id)
-        .eq("status", "pending")
-        .select(
-          "id, status, updated_at"
-        )
-        .maybeSingle();
-
-      if (error) {
-        console.error(
-          "REJECT ACTIVATION ERROR:",
-          error
-        );
-
-        setErrorMessage(
-          error.message ||
-            "Unable to reject activation."
-        );
-
-        return;
-      }
-
-      if (!data) {
-        setErrorMessage(
-          "This activation was not changed. It may already have been processed."
-        );
-
-        await loadActivations();
-
-        return;
-      }
-
-      setMessage(
-        "Activation rejected successfully."
+      const { data, error: rpcError } = await supabase.rpc(
+        "reject_activation",
+        {
+          p_activation_id: activation.id,
+        }
       );
+
+      if (rpcError) {
+        setError(rpcError.message);
+        return;
+      }
+
+      if (
+        data &&
+        typeof data === "object" &&
+        "success" in data &&
+        data.success === false
+      ) {
+        setError(
+          "message" in data
+            ? String(data.message)
+            : "Activation rejection failed."
+        );
+        return;
+      }
+
+      setMessage("Activation rejected successfully.");
 
       await loadActivations();
-    } catch (error) {
-      console.error(
-        "REJECT ACTIVATION EXCEPTION:",
-        error
-      );
-
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
           : "Something went wrong while rejecting activation."
       );
     } finally {
       setProcessingId(null);
     }
-  }
+  };
 
-  /* =========================================================
-     FILTER
-     ========================================================= */
+  const filteredActivations = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
 
-  const filteredActivations =
-    filter === "all"
-      ? activations
-      : activations.filter(
-          (item) =>
-            item.status ===
-            filter.toLowerCase()
-        );
+    return activations.filter((activation) => {
+      const matchesFilter =
+        filter === "all" || activation.status === filter;
 
-  /* =========================================================
-     COUNTS
-     ========================================================= */
+      if (!matchesFilter) return false;
 
-  const pendingCount = activations.filter(
-    (item) => item.status === "pending"
-  ).length;
+      if (!normalizedSearch) return true;
 
-  const approvedCount = activations.filter(
-    (item) => item.status === "approved"
-  ).length;
+      const planName = getPlanName(Number(activation.amount));
 
-  const rejectedCount = activations.filter(
-    (item) => item.status === "rejected"
-  ).length;
+      const searchable = [
+        activation.id,
+        activation.user_id,
+        activation.payment_reference,
+        activation.payment_method,
+        activation.status,
+        activation.customer?.full_name,
+        activation.customer?.email,
+        planName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
 
-  /* =========================================================
-     STATUS STYLE
-     ========================================================= */
+      return searchable.includes(normalizedSearch);
+    });
+  }, [activations, filter, search]);
 
-  function statusClass(status: string) {
-    switch (status.toLowerCase()) {
-      case "approved":
-        return "bg-emerald-100 text-emerald-700";
-
-      case "rejected":
-        return "bg-red-100 text-red-700";
-
-      case "pending":
-      default:
-        return "bg-amber-100 text-amber-700";
-    }
-  }
-
-  /* =========================================================
-     DATE
-     ========================================================= */
-
-  function formatDate(
-    date: string | null | undefined
-  ) {
-    if (!date) {
-      return "—";
-    }
-
-    const parsed = new Date(date);
-
-    if (Number.isNaN(parsed.getTime())) {
-      return "—";
-    }
-
-    return parsed.toLocaleString();
-  }
-
-  /* =========================================================
-     UI
-     ========================================================= */
+  const counts = useMemo(() => {
+    return {
+      all: activations.length,
+      pending: activations.filter((item) => item.status === "pending")
+        .length,
+      approved: activations.filter((item) => item.status === "approved")
+        .length,
+      rejected: activations.filter((item) => item.status === "rejected")
+        .length,
+    };
+  }, [activations]);
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-
-        {/* =====================================================
-            HEADER
-            ===================================================== */}
-
+    <main className="min-h-screen bg-slate-950 text-white">
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {/* Header */}
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() =>
-                router.push("/admin")
-              }
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-50"
-              aria-label="Back to admin dashboard"
-            >
-              <ArrowLeft size={18} />
-            </button>
+          <div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-6 w-6 text-cyan-400" />
 
-            <div>
-              <h1 className="text-2xl font-black tracking-tight">
+              <h1 className="text-2xl font-bold sm:text-3xl">
                 Activations
               </h1>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Manage customer activation requests
-              </p>
             </div>
+
+            <p className="mt-1 text-sm text-slate-400">
+              Review customer activation requests.
+            </p>
           </div>
 
           <button
             type="button"
             onClick={loadActivations}
             disabled={loading}
-            className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RefreshCw
-              size={16}
-              className={
-                loading
-                  ? "animate-spin"
-                  : ""
-              }
+              className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
             />
-
             Refresh
           </button>
         </div>
 
-        {/* =====================================================
-            STATS
-            ===================================================== */}
-
-        <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              All
-            </p>
-
-            <p className="mt-2 text-2xl font-black">
-              {activations.length}
-            </p>
+        {/* Messages */}
+        {error && (
+          <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            {error}
           </div>
-
-          <div className="rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wider text-amber-500">
-              Pending
-            </p>
-
-            <p className="mt-2 text-2xl font-black text-amber-600">
-              {pendingCount}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wider text-emerald-500">
-              Approved
-            </p>
-
-            <p className="mt-2 text-2xl font-black text-emerald-600">
-              {approvedCount}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-red-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wider text-red-500">
-              Rejected
-            </p>
-
-            <p className="mt-2 text-2xl font-black text-red-600">
-              {rejectedCount}
-            </p>
-          </div>
-
-        </div>
-
-        {/* =====================================================
-            FILTERS
-            ===================================================== */}
-
-        <div className="mb-4 flex flex-wrap gap-2">
-          {[
-            ["all", "All"],
-            ["pending", "Pending"],
-            ["approved", "Approved"],
-            ["rejected", "Rejected"],
-          ].map(
-            ([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() =>
-                  setFilter(value)
-                }
-                className={`rounded-xl px-4 py-2 text-xs font-bold transition ${
-                  filter === value
-                    ? "bg-blue-600 text-white shadow-sm"
-                    : "border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
-                }`}
-              >
-                {label}
-              </button>
-            )
-          )}
-        </div>
-
-        {/* =====================================================
-            SUCCESS MESSAGE
-            ===================================================== */}
+        )}
 
         {message && (
-          <div className="mb-4 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-            <CheckCircle2
-              size={18}
-              className="mt-0.5 shrink-0"
-            />
-
-            <span>{message}</span>
+          <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+            {message}
           </div>
         )}
 
-        {/* =====================================================
-            ERROR MESSAGE
-            ===================================================== */}
+        {/* Stats */}
+        <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatCard
+            label="All"
+            value={counts.all}
+            icon={<ShieldCheck className="h-5 w-5" />}
+          />
 
-        {errorMessage && (
-          <div className="mb-4 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-            <XCircle
-              size={18}
-              className="mt-0.5 shrink-0"
-            />
+          <StatCard
+            label="Pending"
+            value={counts.pending}
+            icon={<Clock3 className="h-5 w-5" />}
+          />
 
-            <span>{errorMessage}</span>
+          <StatCard
+            label="Approved"
+            value={counts.approved}
+            icon={<CheckCircle2 className="h-5 w-5" />}
+          />
+
+          <StatCard
+            label="Rejected"
+            value={counts.rejected}
+            icon={<XCircle className="h-5 w-5" />}
+          />
+        </div>
+
+        {/* Filters */}
+        <div className="mb-6 rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              <FilterButton
+                active={filter === "all"}
+                onClick={() => setFilter("all")}
+                label={`All (${counts.all})`}
+              />
+
+              <FilterButton
+                active={filter === "pending"}
+                onClick={() => setFilter("pending")}
+                label={`Pending (${counts.pending})`}
+              />
+
+              <FilterButton
+                active={filter === "approved"}
+                onClick={() => setFilter("approved")}
+                label={`Approved (${counts.approved})`}
+              />
+
+              <FilterButton
+                active={filter === "rejected"}
+                onClick={() => setFilter("rejected")}
+                label={`Rejected (${counts.rejected})`}
+              />
+            </div>
+
+            <div className="relative w-full lg:max-w-sm">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+
+              <input
+                type="text"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search customer, email, ID..."
+                className="w-full rounded-xl border border-white/10 bg-slate-950 py-2.5 pl-10 pr-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-400/40"
+              />
+            </div>
           </div>
-        )}
+        </div>
 
-        {/* =====================================================
-            LOADING
-            ===================================================== */}
+        {/* Loading */}
+        {loading ? (
+          <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-10 text-center">
+            <RefreshCw className="mx-auto h-7 w-7 animate-spin text-cyan-400" />
 
-        {loading && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
-            <Loader2
-              size={30}
-              className="mx-auto animate-spin text-blue-600"
-            />
-
-            <p className="mt-3 text-sm font-semibold text-slate-500">
+            <p className="mt-3 text-sm text-slate-400">
               Loading activation requests...
             </p>
           </div>
-        )}
+        ) : filteredActivations.length === 0 ? (
+          <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-10 text-center">
+            <Clock3 className="mx-auto h-8 w-8 text-slate-600" />
 
-        {/* =====================================================
-            EMPTY
-            ===================================================== */}
+            <p className="mt-3 font-medium text-slate-300">
+              No activation requests found.
+            </p>
 
-        {!loading &&
-          filteredActivations.length === 0 && (
-            <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
-              <Clock3
-                size={32}
-                className="mx-auto text-slate-300"
-              />
-
-              <h2 className="mt-4 text-base font-bold">
-                No Activation Requests
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-400">
-                There are no requests in this
-                category.
-              </p>
-            </div>
-          )}
-
-        {/* =====================================================
-            DESKTOP TABLE
-            ===================================================== */}
-
-        {!loading &&
-          filteredActivations.length > 0 && (
-            <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:block">
+            <p className="mt-1 text-sm text-slate-500">
+              Try another filter or search.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Desktop Table */}
+            <div className="hidden overflow-hidden rounded-2xl border border-white/10 bg-slate-900/70 lg:block">
               <div className="overflow-x-auto">
-                <table className="w-full text-left">
-
-                  <thead className="border-b border-slate-200 bg-slate-50">
-                    <tr>
-                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                        User ID
-                      </th>
-
-                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Amount
-                      </th>
-
-                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Payment
-                      </th>
-
-                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Reference
-                      </th>
-
-                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Status
-                      </th>
-
-                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Date
-                      </th>
-
-                      <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider text-slate-400">
+                <table className="w-full min-w-[1100px]">
+                  <thead className="border-b border-white/10 bg-white/[0.03]">
+                    <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+                      <th className="px-5 py-4">Customer</th>
+                      <th className="px-5 py-4">Plan</th>
+                      <th className="px-5 py-4">Payment</th>
+                      <th className="px-5 py-4">Reference</th>
+                      <th className="px-5 py-4">Status</th>
+                      <th className="px-5 py-4">Date</th>
+                      <th className="px-5 py-4 text-right">
                         Action
                       </th>
                     </tr>
                   </thead>
 
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredActivations.map(
-                      (activation) => (
+                  <tbody className="divide-y divide-white/5">
+                    {filteredActivations.map((activation) => {
+                      const planName = getPlanName(
+                        Number(activation.amount)
+                      );
+
+                      const isProcessing =
+                        processingId === activation.id;
+
+                      return (
                         <tr
                           key={activation.id}
-                          className="transition hover:bg-slate-50"
+                          className="transition hover:bg-white/[0.02]"
                         >
+                          <td className="px-5 py-5">
+                            <div className="flex items-start gap-3">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400">
+                                <User className="h-5 w-5" />
+                              </div>
 
-                          {/* USER */}
+                              <div className="min-w-0">
+                                <p className="font-semibold text-white">
+                                  {activation.customer?.full_name ||
+                                    "Unknown Customer"}
+                                </p>
 
-                          <td className="px-5 py-4">
-                            <p
-                              title={
-                                activation.user_id
-                              }
-                              className="max-w-[180px] truncate font-mono text-xs text-slate-600"
-                            >
-                              {
-                                activation.user_id
-                              }
+                                <p className="mt-0.5 text-xs text-slate-400">
+                                  {activation.customer?.email ||
+                                    "No email"}
+                                </p>
+
+                                <p className="mt-1 max-w-[230px] truncate font-mono text-[10px] text-slate-600">
+                                  {activation.user_id}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-5 py-5">
+                            <div>
+                              <p className="font-semibold text-cyan-300">
+                                {planName}
+                              </p>
+
+                              <p className="mt-1 text-sm font-medium text-white">
+                                {formatAmount(
+                                  activation.amount,
+                                  activation.currency
+                                )}
+                              </p>
+
+                              <p className="mt-1 text-xs text-slate-500">
+                                3 months
+                              </p>
+                            </div>
+                          </td>
+
+                          <td className="px-5 py-5">
+                            <p className="text-sm font-medium text-slate-200">
+                              {activation.payment_method ||
+                                "Not specified"}
                             </p>
                           </td>
 
-                          {/* AMOUNT */}
-
-                          <td className="px-5 py-4">
-                            <p className="font-black">
-                              $
-                              {activation.amount.toFixed(
-                                2
-                              )}
-                            </p>
-
-                            <p className="text-[10px] uppercase text-slate-400">
-                              {
-                                activation.currency
-                              }
-                            </p>
-                          </td>
-
-                          {/* PAYMENT */}
-
-                          <td className="px-5 py-4 text-sm font-semibold text-slate-700">
-                            {activation.payment_method ||
-                              "—"}
-                          </td>
-
-                          {/* REFERENCE */}
-
-                          <td className="px-5 py-4">
-                            <p
-                              title={
-                                activation.payment_reference ||
-                                ""
-                              }
-                              className="max-w-[160px] truncate font-mono text-xs text-slate-500"
-                            >
+                          <td className="max-w-[220px] px-5 py-5">
+                            <p className="break-all font-mono text-xs text-slate-400">
                               {activation.payment_reference ||
-                                "—"}
+                                "No reference"}
                             </p>
                           </td>
 
-                          {/* STATUS */}
-
-                          <td className="px-5 py-4">
-                            <span
-                              className={`inline-flex rounded-full px-3 py-1 text-[10px] font-bold uppercase ${statusClass(
-                                activation.status
-                              )}`}
-                            >
-                              {
-                                activation.status
-                              }
-                            </span>
+                          <td className="px-5 py-5">
+                            <StatusBadge status={activation.status} />
                           </td>
 
-                          {/* DATE */}
-
-                          <td className="px-5 py-4 text-xs text-slate-500">
-                            {formatDate(
-                              activation.created_at
-                            )}
+                          <td className="whitespace-nowrap px-5 py-5 text-xs text-slate-400">
+                            {formatDate(activation.created_at)}
                           </td>
 
-                          {/* ACTION */}
-
-                          <td className="px-5 py-4">
-                            {activation.status ===
-                            "pending" ? (
+                          <td className="px-5 py-5">
+                            {activation.status === "pending" ? (
                               <div className="flex justify-end gap-2">
-
                                 <button
                                   type="button"
-                                  disabled={
-                                    processingId ===
-                                    activation.id
-                                  }
                                   onClick={() =>
-                                    approveActivation(
-                                      activation.id
-                                    )
+                                    rejectActivation(activation)
                                   }
-                                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                  disabled={isProcessing}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                  {processingId ===
-                                  activation.id ? (
-                                    <Loader2
-                                      size={14}
-                                      className="animate-spin"
-                                    />
-                                  ) : (
-                                    <CheckCircle2
-                                      size={14}
-                                    />
-                                  )}
-
-                                  Approve
-                                </button>
-
-                                <button
-                                  type="button"
-                                  disabled={
-                                    processingId ===
-                                    activation.id
-                                  }
-                                  onClick={() =>
-                                    rejectActivation(
-                                      activation.id
-                                    )
-                                  }
-                                  className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  <XCircle
-                                    size={14}
-                                  />
-
+                                  <XCircle className="h-4 w-4" />
                                   Reject
                                 </button>
 
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    approveActivation(activation)
+                                  }
+                                  disabled={isProcessing}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {isProcessing ? (
+                                    <RefreshCw className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="h-4 w-4" />
+                                  )}
+                                  Approve
+                                </button>
                               </div>
                             ) : (
-                              <div className="text-right text-xs font-semibold text-slate-400">
+                              <div className="text-right text-xs text-slate-600">
                                 Processed
                               </div>
                             )}
                           </td>
-
                         </tr>
-                      )
-                    )}
+                      );
+                    })}
                   </tbody>
-
                 </table>
               </div>
             </div>
-          )}
 
-        {/* =====================================================
-            MOBILE CARDS
-            ===================================================== */}
+            {/* Mobile / Tablet Cards */}
+            <div className="space-y-4 lg:hidden">
+              {filteredActivations.map((activation) => {
+                const planName = getPlanName(
+                  Number(activation.amount)
+                );
 
-        {!loading &&
-          filteredActivations.length > 0 && (
-            <div className="space-y-3 md:hidden">
-              {filteredActivations.map(
-                (activation) => (
+                const isProcessing =
+                  processingId === activation.id;
+
+                return (
                   <div
                     key={activation.id}
-                    className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                    className="rounded-2xl border border-white/10 bg-slate-900/70 p-4"
                   >
-
-                    {/* TOP */}
-
                     <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                          Activation
-                        </p>
-
-                        <p className="mt-1 text-lg font-black">
-                          $
-                          {activation.amount.toFixed(
-                            2
-                          )}
-                        </p>
-
-                        <p className="text-[10px] uppercase text-slate-400">
-                          {
-                            activation.currency
-                          }
-                        </p>
-                      </div>
-
-                      <span
-                        className={`rounded-full px-3 py-1 text-[9px] font-bold uppercase ${statusClass(
-                          activation.status
-                        )}`}
-                      >
-                        {
-                          activation.status
-                        }
-                      </span>
-                    </div>
-
-                    {/* DETAILS */}
-
-                    <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
-
-                      {/* USER */}
-
-                      <div className="flex items-start justify-between gap-3">
-                        <span className="text-xs text-slate-400">
-                          User
-                        </span>
-
-                        <span
-                          title={
-                            activation.user_id
-                          }
-                          className="max-w-[220px] truncate text-right font-mono text-[10px] text-slate-600"
-                        >
-                          {
-                            activation.user_id
-                          }
-                        </span>
-                      </div>
-
-                      {/* PAYMENT */}
-
-                      <div className="flex items-start justify-between gap-3">
-                        <span className="text-xs text-slate-400">
-                          Payment
-                        </span>
-
-                        <span className="text-right text-xs font-semibold text-slate-700">
-                          {activation.payment_method ||
-                            "—"}
-                        </span>
-                      </div>
-
-                      {/* REFERENCE */}
-
-                      <div className="flex items-start justify-between gap-3">
-                        <span className="text-xs text-slate-400">
-                          Reference
-                        </span>
-
-                        <span
-                          title={
-                            activation.payment_reference ||
-                            ""
-                          }
-                          className="max-w-[180px] truncate text-right font-mono text-[10px] text-slate-600"
-                        >
-                          {activation.payment_reference ||
-                            "—"}
-                        </span>
-                      </div>
-
-                      {/* CREATED */}
-
-                      <div className="flex items-start justify-between gap-3">
-                        <span className="text-xs text-slate-400">
-                          Submitted
-                        </span>
-
-                        <span className="text-right text-[10px] text-slate-500">
-                          {formatDate(
-                            activation.created_at
-                          )}
-                        </span>
-                      </div>
-
-                      {/* UPDATED */}
-
-                      {activation.status !==
-                        "pending" && (
-                        <div className="flex items-start justify-between gap-3">
-                          <span className="text-xs text-slate-400">
-                            Updated
-                          </span>
-
-                          <span className="text-right text-[10px] text-slate-500">
-                            {formatDate(
-                              activation.updated_at
-                            )}
-                          </span>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400">
+                          <User className="h-5 w-5" />
                         </div>
-                      )}
 
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-white">
+                            {activation.customer?.full_name ||
+                              "Unknown Customer"}
+                          </p>
+
+                          <p className="truncate text-xs text-slate-400">
+                            {activation.customer?.email ||
+                              "No email"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <StatusBadge status={activation.status} />
                     </div>
 
-                    {/* ACTIONS */}
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <InfoBox
+                        label="Plan"
+                        value={planName}
+                      />
 
-                    {activation.status ===
-                      "pending" && (
+                      <InfoBox
+                        label="Amount"
+                        value={formatAmount(
+                          activation.amount,
+                          activation.currency
+                        )}
+                      />
+
+                      <InfoBox
+                        label="Payment"
+                        value={
+                          activation.payment_method ||
+                          "Not specified"
+                        }
+                      />
+
+                      <InfoBox
+                        label="Date"
+                        value={formatDate(
+                          activation.created_at
+                        )}
+                      />
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-white/5 bg-black/20 p-3">
+                      <p className="text-[10px] uppercase tracking-wider text-slate-600">
+                        Payment Reference
+                      </p>
+
+                      <p className="mt-1 break-all font-mono text-xs text-slate-400">
+                        {activation.payment_reference ||
+                          "No reference"}
+                      </p>
+                    </div>
+
+                    <div className="mt-3 rounded-xl border border-white/5 bg-black/20 p-3">
+                      <p className="text-[10px] uppercase tracking-wider text-slate-600">
+                        Customer ID
+                      </p>
+
+                      <p className="mt-1 break-all font-mono text-[10px] text-slate-500">
+                        {activation.user_id}
+                      </p>
+                    </div>
+
+                    {activation.status === "pending" && (
                       <div className="mt-4 grid grid-cols-2 gap-2">
-
                         <button
                           type="button"
-                          disabled={
-                            processingId ===
-                            activation.id
-                          }
                           onClick={() =>
-                            approveActivation(
-                              activation.id
-                            )
+                            rejectActivation(activation)
                           }
-                          className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-3 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={isProcessing}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {processingId ===
-                          activation.id ? (
-                            <Loader2
-                              size={14}
-                              className="animate-spin"
-                            />
-                          ) : (
-                            <CheckCircle2
-                              size={14}
-                            />
-                          )}
-
-                          Approve
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={
-                            processingId ===
-                            activation.id
-                          }
-                          onClick={() =>
-                            rejectActivation(
-                              activation.id
-                            )
-                          }
-                          className="flex items-center justify-center gap-1.5 rounded-xl bg-red-600 py-3 text-xs font-bold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <XCircle size={14} />
-
+                          <XCircle className="h-4 w-4" />
                           Reject
                         </button>
 
+                        <button
+                          type="button"
+                          onClick={() =>
+                            approveActivation(activation)
+                          }
+                          disabled={isProcessing}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isProcessing ? (
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="h-4 w-4" />
+                          )}
+                          Approve
+                        </button>
                       </div>
                     )}
-
                   </div>
-                )
-              )}
+                );
+              })}
             </div>
-          )}
-
+          </>
+        )}
       </div>
     </main>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-slate-400">{label}</div>
+
+        <div className="text-cyan-400">{icon}</div>
+      </div>
+
+      <p className="mt-2 text-2xl font-bold text-white">{value}</p>
+    </div>
+  );
+}
+
+function FilterButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+        active
+          ? "bg-cyan-500 text-white"
+          : "border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function StatusBadge({
+  status,
+}: {
+  status: ActivationStatus;
+}) {
+  if (status === "approved") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        Approved
+      </span>
+    );
+  }
+
+  if (status === "rejected") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-300">
+        <XCircle className="h-3.5 w-3.5" />
+        Rejected
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-300">
+      <Clock3 className="h-3.5 w-3.5" />
+      Pending
+    </span>
+  );
+}
+
+function InfoBox({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-black/20 p-3">
+      <p className="text-[10px] uppercase tracking-wider text-slate-600">
+        {label}
+      </p>
+
+      <p className="mt-1 truncate text-sm font-semibold text-slate-200">
+        {value}
+      </p>
+    </div>
   );
 }

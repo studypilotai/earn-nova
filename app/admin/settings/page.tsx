@@ -5,9 +5,13 @@ export default function AdminSettingsPage() {
     <main className="min-h-screen bg-[#050b16] px-4 py-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl">
 
-        {/* Header */}
+        {/* ==================================================
+            HEADER
+        ================================================== */}
+
         <div className="mb-8">
           <div className="flex items-center gap-3">
+
             <div className="h-10 w-1 rounded-full bg-cyan-400" />
 
             <div>
@@ -19,10 +23,14 @@ export default function AdminSettingsPage() {
                 Manage your EarnNova platform settings.
               </p>
             </div>
+
           </div>
         </div>
 
-        {/* Maintenance */}
+        {/* ==================================================
+            MAINTENANCE MODE
+        ================================================== */}
+
         <MaintenanceToggle />
 
       </div>

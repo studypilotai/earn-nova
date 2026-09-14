@@ -33,13 +33,16 @@ export default function SettingsPage() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
 
+  const [currentPassword, setCurrentPassword] =
+    useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] =
     useState("");
 
+  const [showCurrentPassword, setShowCurrentPassword] =
+    useState(false);
   const [showPassword, setShowPassword] =
     useState(false);
-
   const [showConfirmPassword, setShowConfirmPassword] =
     useState(false);
 
@@ -84,6 +87,7 @@ export default function SettingsPage() {
       /*
        * Load profile.
        */
+
       const {
         data: profileData,
         error: profileError,
@@ -236,6 +240,7 @@ export default function SettingsPage() {
       /*
        * Keep local UI name synchronized.
        */
+
       if (typeof window !== "undefined") {
         localStorage.setItem(
           "earnNovaUserName",
@@ -266,6 +271,15 @@ export default function SettingsPage() {
    * =========================================================
    * CHANGE PASSWORD
    * =========================================================
+   *
+   * Security flow:
+   *
+   * 1. Get current authenticated user.
+   * 2. Verify current password using signInWithPassword.
+   * 3. Only after successful verification update password.
+   *
+   * No password is stored in localStorage.
+   * =========================================================
    */
 
   async function changePassword() {
@@ -273,6 +287,14 @@ export default function SettingsPage() {
 
     setPasswordMessage("");
     setPasswordMessageType("");
+
+    if (!currentPassword) {
+      setPasswordMessage(
+        "Please enter your current password."
+      );
+      setPasswordMessageType("error");
+      return;
+    }
 
     if (!newPassword) {
       setPasswordMessage(
@@ -298,6 +320,14 @@ export default function SettingsPage() {
       return;
     }
 
+    if (newPassword === currentPassword) {
+      setPasswordMessage(
+        "New password must be different from your current password."
+      );
+      setPasswordMessageType("error");
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
       setPasswordMessage(
         "Passwords do not match."
@@ -309,28 +339,98 @@ export default function SettingsPage() {
     setChangingPassword(true);
 
     try {
-      const { error } =
+      /*
+       * =====================================================
+       * GET CURRENT AUTH USER
+       * =====================================================
+       */
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setPasswordMessage(
+          "Your session has expired. Please log in again."
+        );
+        setPasswordMessageType("error");
+
+        router.replace("/login");
+        return;
+      }
+
+      if (!user.email) {
+        setPasswordMessage(
+          "Your account email could not be verified."
+        );
+        setPasswordMessageType("error");
+        return;
+      }
+
+      /*
+       * =====================================================
+       * VERIFY CURRENT PASSWORD
+       *
+       * We verify the existing password before allowing
+       * Supabase Auth to update it.
+       * =====================================================
+       */
+
+      const {
+        error: verifyError,
+      } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+
+      if (verifyError) {
+        console.error(
+          "CURRENT PASSWORD VERIFICATION ERROR:",
+          verifyError
+        );
+
+        setPasswordMessage(
+          "Current password is incorrect."
+        );
+        setPasswordMessageType("error");
+        return;
+      }
+
+      /*
+       * =====================================================
+       * UPDATE PASSWORD
+       * =====================================================
+       */
+
+      const { error: updateError } =
         await supabase.auth.updateUser({
           password: newPassword,
         });
 
-      if (error) {
+      if (updateError) {
         console.error(
           "PASSWORD UPDATE ERROR:",
-          error
+          updateError
         );
 
         setPasswordMessage(
-          error.message ||
+          updateError.message ||
             "Unable to change password."
         );
         setPasswordMessageType("error");
         return;
       }
 
+      /*
+       * Clear password fields after success.
+       */
+
+      setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
 
+      setShowCurrentPassword(false);
       setShowPassword(false);
       setShowConfirmPassword(false);
 
@@ -618,7 +718,8 @@ export default function SettingsPage() {
               </h2>
 
               <p className="mt-0.5 text-[10px] text-slate-600">
-                Keep your EarnNova account secure.
+                Verify your current password before
+                changing it.
               </p>
             </div>
           </div>
@@ -660,15 +761,70 @@ export default function SettingsPage() {
             />
 
             <p className="text-[10px] leading-5 text-slate-500">
+              Your current password is verified
+              before any password change is made.
               Use a strong password with at least
-              8 characters. Never share your password
-              with anyone.
+              8 characters.
             </p>
+          </div>
+
+          {/* CURRENT PASSWORD */}
+
+          <div>
+            <label className="mb-2 block text-[11px] font-semibold text-slate-300">
+              Current Password
+            </label>
+
+            <div className="relative">
+              <Lock
+                size={17}
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600"
+              />
+
+              <input
+                type={
+                  showCurrentPassword
+                    ? "text"
+                    : "password"
+                }
+                value={currentPassword}
+                onChange={(event) =>
+                  setCurrentPassword(
+                    event.target.value
+                  )
+                }
+                placeholder="Enter current password"
+                autoComplete="current-password"
+                maxLength={72}
+                className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] py-3 pl-11 pr-12 text-sm text-white outline-none transition placeholder:text-slate-700 focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/20"
+              />
+
+              <button
+                type="button"
+                onClick={() =>
+                  setShowCurrentPassword(
+                    (value) => !value
+                  )
+                }
+                aria-label={
+                  showCurrentPassword
+                    ? "Hide current password"
+                    : "Show current password"
+                }
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 transition hover:text-slate-300"
+              >
+                {showCurrentPassword ? (
+                  <EyeOff size={18} />
+                ) : (
+                  <Eye size={18} />
+                )}
+              </button>
+            </div>
           </div>
 
           {/* NEW PASSWORD */}
 
-          <div>
+          <div className="mt-5">
             <label className="mb-2 block text-[11px] font-semibold text-slate-300">
               New Password
             </label>
@@ -788,7 +944,7 @@ export default function SettingsPage() {
                   size={17}
                   className="animate-spin"
                 />
-                Changing Password...
+                Verifying & Changing...
               </>
             ) : (
               <>

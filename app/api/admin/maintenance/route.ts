@@ -14,6 +14,7 @@ async function getAdmin() {
         getAll() {
           return cookieStore.getAll();
         },
+
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(
@@ -21,7 +22,10 @@ async function getAdmin() {
                 cookieStore.set(name, value, options);
               }
             );
-          } catch {}
+          } catch {
+            // Cookie writes can fail in some server contexts.
+            // Proxy handles session refresh.
+          }
         },
       },
     }
@@ -29,19 +33,20 @@ async function getAdmin() {
 
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser();
 
-  if (!user) {
+  if (error || !user) {
     return null;
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", user.id)
     .maybeSingle();
 
-  if (!profile || profile.role !== "admin") {
+  if (profileError || !profile || profile.role !== "admin") {
     return null;
   }
 
@@ -65,9 +70,22 @@ export async function GET() {
       );
     }
 
+    const serviceRoleKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!serviceRoleKey) {
+      return NextResponse.json(
+        {
+          error:
+            "SUPABASE_SERVICE_ROLE_KEY is missing",
+        },
+        { status: 500 }
+      );
+    }
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      serviceRoleKey,
       {
         auth: {
           autoRefreshToken: false,
@@ -169,8 +187,7 @@ export async function PATCH(request: Request) {
     };
 
     if (
-      typeof body.maintenance_title ===
-        "string" &&
+      typeof body.maintenance_title === "string" &&
       body.maintenance_title.trim()
     ) {
       updateData.maintenance_title =
@@ -178,8 +195,7 @@ export async function PATCH(request: Request) {
     }
 
     if (
-      typeof body.maintenance_message ===
-        "string" &&
+      typeof body.maintenance_message === "string" &&
       body.maintenance_message.trim()
     ) {
       updateData.maintenance_message =
@@ -223,3 +239,4 @@ export async function PATCH(request: Request) {
     );
   }
 }
+

@@ -49,6 +49,32 @@ type User = {
   created_at: string | null;
 };
 
+type RpcResult = {
+  success?: boolean;
+  message?: string;
+};
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function getRpcResult(data: unknown): RpcResult {
+  if (Array.isArray(data)) {
+    return (
+      (data[0] as RpcResult | undefined) ?? {}
+    );
+  }
+
+  if (
+    data &&
+    typeof data === "object"
+  ) {
+    return data as RpcResult;
+  }
+
+  return {};
+}
+
 /* =========================================================
    PAGE
 ========================================================= */
@@ -114,19 +140,13 @@ export default function AdminUsersPage() {
       } =
         await supabase
           .from("profiles")
-          .select(
-            "id, role"
-          )
-          .eq(
-            "id",
-            user.id
-          )
+          .select("id, role")
+          .eq("id", user.id)
           .maybeSingle();
 
       if (
         profileError ||
-        profile?.role !==
-          "admin"
+        profile?.role !== "admin"
       ) {
         router.replace(
           "/dashboard"
@@ -184,25 +204,18 @@ export default function AdminUsersPage() {
             .order(
               "created_at",
               {
-                ascending:
-                  false,
+                ascending: false,
               }
             );
 
         if (error) {
-          console.error(
-            "Users load error:",
-            error
-          );
-
           throw new Error(
             error.message
           );
         }
 
         setUsers(
-          (data as User[]) ??
-            []
+          (data as User[]) ?? []
         );
       } catch (error) {
         console.error(
@@ -237,21 +250,16 @@ export default function AdminUsersPage() {
   function openBlockModal(
     user: User
   ) {
-    setSelectedUser(
-      user
-    );
+    setSelectedUser(user);
 
     setBlockReason(
-      user.block_reason ??
-        ""
+      user.block_reason ?? ""
     );
 
     setMessage("");
     setErrorMessage("");
 
-    setShowBlockModal(
-      true
-    );
+    setShowBlockModal(true);
   }
 
   /* =======================================================
@@ -263,14 +271,8 @@ export default function AdminUsersPage() {
       return;
     }
 
-    setShowBlockModal(
-      false
-    );
-
-    setSelectedUser(
-      null
-    );
-
+    setShowBlockModal(false);
+    setSelectedUser(null);
     setBlockReason("");
   }
 
@@ -299,7 +301,11 @@ export default function AdminUsersPage() {
 
     const confirmed =
       window.confirm(
-        `Block "${selectedUser.full_name || selectedUser.email || "this user"}"?\n\nThis user will not be allowed to use EarnNova earning features.`
+        `Block "${
+          selectedUser.full_name ||
+          selectedUser.email ||
+          "this user"
+        }"?\n\nThis user will not be allowed to use EarnNova earning features.`
       );
 
     if (!confirmed) {
@@ -321,29 +327,41 @@ export default function AdminUsersPage() {
         return;
       }
 
+      /*
+       * IMPORTANT:
+       * Do NOT update profiles directly from browser.
+       * Secure admin RPC handles authorization + update.
+       */
+
       const {
+        data,
         error,
       } =
-        await supabase
-          .from("profiles")
-          .update({
-            is_blocked:
-              true,
-            block_reason:
+        await supabase.rpc(
+          "admin_block_user",
+          {
+            p_user_id:
+              selectedUser.id,
+            p_block_reason:
               cleanReason,
-          })
-          .eq(
-            "id",
-            selectedUser.id
-          )
-          .eq(
-            "role",
-            "customer"
-          );
+          }
+        );
 
       if (error) {
         throw new Error(
           error.message
+        );
+      }
+
+      const result =
+        getRpcResult(data);
+
+      if (
+        result.success === false
+      ) {
+        throw new Error(
+          result.message ||
+            "Unable to block user."
         );
       }
 
@@ -355,8 +373,7 @@ export default function AdminUsersPage() {
               selectedUser.id
                 ? {
                     ...item,
-                    is_blocked:
-                      true,
+                    is_blocked: true,
                     block_reason:
                       cleanReason,
                   }
@@ -364,11 +381,13 @@ export default function AdminUsersPage() {
           )
       );
 
+      setShowBlockModal(false);
+      setSelectedUser(null);
+      setBlockReason("");
+
       setMessage(
         "User blocked successfully."
       );
-
-      closeBlockModal();
     } catch (error) {
       console.error(
         "BLOCK USER ERROR:",
@@ -381,9 +400,7 @@ export default function AdminUsersPage() {
           : "Unable to block user."
       );
     } finally {
-      setProcessingId(
-        null
-      );
+      setProcessingId(null);
     }
   }
 
@@ -394,15 +411,17 @@ export default function AdminUsersPage() {
   async function unblockUser(
     user: User
   ) {
-    if (
-      processingId
-    ) {
+    if (processingId) {
       return;
     }
 
     const confirmed =
       window.confirm(
-        `Unblock "${user.full_name || user.email || "this user"}"?\n\nThis will restore the user's account access.`
+        `Unblock "${
+          user.full_name ||
+          user.email ||
+          "this user"
+        }"?\n\nThis will restore the user's account access.`
       );
 
     if (!confirmed) {
@@ -424,25 +443,21 @@ export default function AdminUsersPage() {
         return;
       }
 
+      /*
+       * Secure admin RPC.
+       */
+
       const {
+        data,
         error,
       } =
-        await supabase
-          .from("profiles")
-          .update({
-            is_blocked:
-              false,
-            block_reason:
-              null,
-          })
-          .eq(
-            "id",
-            user.id
-          )
-          .eq(
-            "role",
-            "customer"
-          );
+        await supabase.rpc(
+          "admin_unblock_user",
+          {
+            p_user_id:
+              user.id,
+          }
+        );
 
       if (error) {
         throw new Error(
@@ -450,18 +465,27 @@ export default function AdminUsersPage() {
         );
       }
 
+      const result =
+        getRpcResult(data);
+
+      if (
+        result.success === false
+      ) {
+        throw new Error(
+          result.message ||
+            "Unable to unblock user."
+        );
+      }
+
       setUsers(
         (current) =>
           current.map(
             (item) =>
-              item.id ===
-              user.id
+              item.id === user.id
                 ? {
                     ...item,
-                    is_blocked:
-                      false,
-                    block_reason:
-                      null,
+                    is_blocked: false,
+                    block_reason: null,
                   }
                 : item
           )
@@ -482,9 +506,7 @@ export default function AdminUsersPage() {
           : "Unable to unblock user."
       );
     } finally {
-      setProcessingId(
-        null
-      );
+      setProcessingId(null);
     }
   }
 
@@ -507,19 +529,13 @@ export default function AdminUsersPage() {
         (user) =>
           user.full_name
             ?.toLowerCase()
-            .includes(
-              keyword
-            ) ||
+            .includes(keyword) ||
           user.email
             ?.toLowerCase()
-            .includes(
-              keyword
-            ) ||
+            .includes(keyword) ||
           user.id
             .toLowerCase()
-            .includes(
-              keyword
-            )
+            .includes(keyword)
       );
     }, [
       users,
@@ -536,15 +552,13 @@ export default function AdminUsersPage() {
   const activeUsers =
     users.filter(
       (user) =>
-        user.is_blocked !==
-        true
+        user.is_blocked !== true
     ).length;
 
   const blockedUsers =
     users.filter(
       (user) =>
-        user.is_blocked ===
-        true
+        user.is_blocked === true
     ).length;
 
   /* =======================================================
@@ -581,9 +595,7 @@ export default function AdminUsersPage() {
 
       <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
 
-        {/* =================================================
-            HEADER
-        ================================================= */}
+        {/* HEADER */}
 
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 
@@ -591,16 +603,12 @@ export default function AdminUsersPage() {
 
             <button
               onClick={() =>
-                router.push(
-                  "/admin"
-                )
+                router.push("/admin")
               }
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-[#11151b] text-slate-400 transition hover:border-blue-500/30 hover:bg-[#151b23] hover:text-white"
               aria-label="Back to admin"
             >
-              <ArrowLeft
-                size={19}
-              />
+              <ArrowLeft size={19} />
             </button>
 
             <div>
@@ -631,9 +639,7 @@ export default function AdminUsersPage() {
               setErrorMessage("");
               void loadUsers();
             }}
-            disabled={
-              loading
-            }
+            disabled={loading}
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-800 bg-[#11151b] px-4 py-2.5 text-sm font-bold text-slate-300 transition hover:bg-[#151b23] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RefreshCw
@@ -644,72 +650,54 @@ export default function AdminUsersPage() {
                   : ""
               }
             />
-
             Refresh
           </button>
 
         </div>
 
-        {/* =================================================
-            STATS
-        ================================================= */}
+        {/* STATS */}
 
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
 
           <StatCard
             title="Total Users"
-            value={String(
-              totalUsers
-            )}
-            icon={
-              <Users size={20} />
-            }
+            value={String(totalUsers)}
+            icon={<Users size={20} />}
             type="blue"
           />
 
           <StatCard
             title="Active Users"
-            value={String(
-              activeUsers
-            )}
+            value={String(activeUsers)}
             icon={
-              <ShieldCheck
-                size={20}
-              />
+              <ShieldCheck size={20} />
             }
             type="success"
           />
 
           <StatCard
             title="Blocked Users"
-            value={String(
-              blockedUsers
-            )}
+            value={String(blockedUsers)}
             icon={
-              <ShieldBan
-                size={20}
-              />
+              <ShieldBan size={20} />
             }
             type="danger"
           />
 
         </div>
 
-        {/* =================================================
-            MESSAGES
-        ================================================= */}
+        {/* MESSAGES */}
 
         {message && (
           <div className="mb-5 flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-300">
-            <CheckCircle
-              size={17}
-            />
+            <CheckCircle size={17} />
             {message}
           </div>
         )}
 
         {errorMessage && (
           <div className="mb-5 flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold leading-6 text-red-300">
+
             <XCircle
               size={17}
               className="mt-0.5 shrink-0"
@@ -724,12 +712,11 @@ export default function AdminUsersPage() {
                 {errorMessage}
               </p>
             </div>
+
           </div>
         )}
 
-        {/* =================================================
-            SEARCH
-        ================================================= */}
+        {/* SEARCH */}
 
         <div className="mb-5 rounded-2xl border border-slate-800 bg-[#11151b] p-4">
 
@@ -742,9 +729,7 @@ export default function AdminUsersPage() {
 
             <input
               type="text"
-              value={
-                search
-              }
+              value={search}
               onChange={(e) =>
                 setSearch(
                   e.target.value
@@ -758,9 +743,7 @@ export default function AdminUsersPage() {
 
         </div>
 
-        {/* =================================================
-            LOADING
-        ================================================= */}
+        {/* USERS */}
 
         {loading ? (
 
@@ -777,8 +760,7 @@ export default function AdminUsersPage() {
 
           </div>
 
-        ) : filteredUsers.length ===
-          0 ? (
+        ) : filteredUsers.length === 0 ? (
 
           <div className="rounded-2xl border border-slate-800 bg-[#11151b] p-10 text-center">
 
@@ -807,18 +789,14 @@ export default function AdminUsersPage() {
               (user) => {
 
                 const blocked =
-                  user.is_blocked ===
-                  true;
+                  user.is_blocked === true;
 
                 const processing =
-                  processingId ===
-                  user.id;
+                  processingId === user.id;
 
                 return (
                   <div
-                    key={
-                      user.id
-                    }
+                    key={user.id}
                     className={`rounded-2xl border bg-[#11151b] p-5 transition ${
                       blocked
                         ? "border-red-500/20"
@@ -840,9 +818,7 @@ export default function AdminUsersPage() {
                           }`}
                         >
                           {(
-                            user.full_name?.charAt(
-                              0
-                            ) ||
+                            user.full_name?.charAt(0) ||
                             "U"
                           ).toUpperCase()}
                         </div>
@@ -876,19 +852,14 @@ export default function AdminUsersPage() {
                           </p>
 
                           <p className="mt-1 truncate text-[10px] text-slate-700">
-                            ID:{" "}
-                            {
-                              user.id
-                            }
+                            ID: {user.id}
                           </p>
 
                           {blocked &&
                             user.block_reason && (
                               <p className="mt-2 max-w-md text-xs leading-5 text-red-400">
                                 Reason:{" "}
-                                {
-                                  user.block_reason
-                                }
+                                {user.block_reason}
                               </p>
                             )}
 
@@ -905,11 +876,8 @@ export default function AdminUsersPage() {
                           value={`$${(
                             Number(
                               user.wallet
-                            ) ||
-                            0
-                          ).toFixed(
-                            2
-                          )}`}
+                            ) || 0
+                          ).toFixed(2)}`}
                         />
 
                         <UserStat
@@ -917,11 +885,8 @@ export default function AdminUsersPage() {
                           value={`$${(
                             Number(
                               user.total_earned
-                            ) ||
-                            0
-                          ).toFixed(
-                            2
-                          )}`}
+                            ) || 0
+                          ).toFixed(2)}`}
                         />
 
                         <UserStat
@@ -961,9 +926,7 @@ export default function AdminUsersPage() {
                           }
                           className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-2.5 text-sm font-bold text-slate-300 transition hover:border-slate-700 hover:bg-[#151b23] hover:text-white"
                         >
-                          <Eye
-                            size={16}
-                          />
+                          <Eye size={16} />
                           View
                         </button>
 
@@ -982,16 +945,12 @@ export default function AdminUsersPage() {
                           >
                             {processing ? (
                               <RefreshCw
-                                size={
-                                  16
-                                }
+                                size={16}
                                 className="animate-spin"
                               />
                             ) : (
                               <CheckCircle
-                                size={
-                                  16
-                                }
+                                size={16}
                               />
                             )}
 
@@ -1013,12 +972,7 @@ export default function AdminUsersPage() {
                             }
                             className="inline-flex items-center gap-2 rounded-xl bg-red-500/10 px-4 py-2.5 text-sm font-bold text-red-400 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
                           >
-                            <Ban
-                              size={
-                                16
-                              }
-                            />
-
+                            <Ban size={16} />
                             Block
                           </button>
 
@@ -1039,13 +993,22 @@ export default function AdminUsersPage() {
 
       </div>
 
-      {/* ===================================================
-          BLOCK MODAL
-      =================================================== */}
+      {/* BLOCK MODAL */}
 
       {showBlockModal &&
         selectedUser && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+            onMouseDown={(event) => {
+              if (
+                event.target ===
+                event.currentTarget
+              ) {
+                closeBlockModal();
+              }
+            }}
+          >
 
             <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-[#11151b] shadow-2xl">
 
@@ -1058,11 +1021,7 @@ export default function AdminUsersPage() {
                   <div className="flex items-center gap-2">
 
                     <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10 text-red-400">
-                      <Ban
-                        size={
-                          18
-                        }
-                      />
+                      <Ban size={18} />
                     </div>
 
                     <h2 className="font-black text-white">
@@ -1085,10 +1044,9 @@ export default function AdminUsersPage() {
                     !!processingId
                   }
                   className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-[#0b0f14] text-slate-500 transition hover:text-white disabled:opacity-50"
+                  aria-label="Close"
                 >
-                  <X
-                    size={18}
-                  />
+                  <X size={18} />
                 </button>
 
               </div>
@@ -1127,8 +1085,7 @@ export default function AdminUsersPage() {
                     }
                     onChange={(e) =>
                       setBlockReason(
-                        e.target
-                          .value
+                        e.target.value
                       )
                     }
                     rows={4}
@@ -1239,7 +1196,6 @@ function StatCard({
     <div
       className={`rounded-2xl border p-5 ${styles[type].box}`}
     >
-
       <div className="flex items-center justify-between">
 
         <div>
@@ -1261,7 +1217,6 @@ function StatCard({
         </div>
 
       </div>
-
     </div>
   );
 }

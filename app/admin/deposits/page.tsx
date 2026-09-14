@@ -57,6 +57,19 @@ type Profile = {
   email: string | null;
 };
 
+type RawDeposit = {
+  id: string;
+  user_id: string;
+  amount: number | string | null;
+  method: string;
+  transaction_id: string | null;
+  payment_proof: string | null;
+  status: DepositStatus | string;
+  admin_note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type RpcResult = {
   success?: boolean;
   message?: string;
@@ -254,7 +267,7 @@ export default function AdminDepositsPage() {
         }
 
         const rawDeposits =
-          depositData ?? [];
+          (depositData ?? []) as RawDeposit[];
 
         /* --------------------------------------------------
            4. GET UNIQUE USER IDS
@@ -264,7 +277,7 @@ export default function AdminDepositsPage() {
           ...new Set(
             rawDeposits
               .map(
-                (deposit) =>
+                (deposit: RawDeposit) =>
                   deposit.user_id
               )
               .filter(Boolean)
@@ -314,7 +327,7 @@ export default function AdminDepositsPage() {
             profiles = [];
           } else {
             profiles =
-              profileData ?? [];
+              (profileData ?? []) as Profile[];
           }
         }
 
@@ -355,7 +368,7 @@ export default function AdminDepositsPage() {
 
         const formatted: Deposit[] =
           rawDeposits.map(
-            (item) => ({
+            (item: RawDeposit) => ({
               id: item.id,
               user_id:
                 item.user_id,
@@ -645,7 +658,7 @@ export default function AdminDepositsPage() {
           .trim();
 
       return deposits.filter(
-        (deposit) => {
+        (deposit: Deposit) => {
           const profile =
             deposit.profile;
 
@@ -706,7 +719,7 @@ export default function AdminDepositsPage() {
 
   const pendingCount =
     deposits.filter(
-      (item) =>
+      (item: Deposit) =>
         item.status ===
         "pending"
     ).length;
@@ -714,12 +727,12 @@ export default function AdminDepositsPage() {
   const pendingAmount =
     deposits
       .filter(
-        (item) =>
+        (item: Deposit) =>
           item.status ===
           "pending"
       )
       .reduce(
-        (sum, item) =>
+        (sum: number, item: Deposit) =>
           sum + item.amount,
         0
       );
@@ -727,12 +740,12 @@ export default function AdminDepositsPage() {
   const approvedAmount =
     deposits
       .filter(
-        (item) =>
+        (item: Deposit) =>
           item.status ===
           "approved"
       )
       .reduce(
-        (sum, item) =>
+        (sum: number, item: Deposit) =>
           sum + item.amount,
         0
       );
@@ -1134,7 +1147,7 @@ export default function AdminDepositsPage() {
 
                 <tbody>
                   {filteredDeposits.map(
-                    (deposit) => (
+                    (deposit: Deposit) => (
                       <tr
                         key={
                           deposit.id

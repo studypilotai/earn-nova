@@ -21,11 +21,11 @@ import {
 
 const supabase = createClient();
 
-const USD_TO_PKR = 285;
+const USD_TO_PKR = 288;
 
-const BANK_ACCOUNT = "00551011258485";
-
-const USDT_WALLET = "TAWgQk5vdz964jxps2nYjTAj6c8WRpp4hb";
+const JAZZCASH_ACCOUNT = "JazzCash";
+const JAZZCASH_ACCOUNT_TITLE = "MUHAMMAD ABDULLAH";
+const JAZZCASH_IBAN = "PK38JCMA2710923339830897";
 
 type Plan = {
   name: string;
@@ -141,33 +141,25 @@ function formatUsd(value: number) {
 export default function ActivatePage() {
   const router = useRouter();
 
-  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(
-    null
-  );
+  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
 
   const [country, setCountry] = useState("");
 
   const [method, setMethod] = useState<"bank" | "crypto" | "">("");
 
-  const [bankName, setBankName] = useState("");
-
   const [senderName, setSenderName] = useState("");
-
   const [senderNumber, setSenderNumber] = useState("");
 
   const [trxId, setTrxId] = useState("");
-
   const [note, setNote] = useState("");
 
   const [activation, setActivation] =
     useState<Activation | null>(null);
 
   const [loading, setLoading] = useState(true);
-
   const [submitting, setSubmitting] = useState(false);
 
   const [error, setError] = useState("");
-
   const [copied, setCopied] = useState("");
 
   const isPakistan = country === "Pakistan";
@@ -243,7 +235,9 @@ export default function ActivatePage() {
           "id,user_id,amount,currency,payment_method,payment_reference,status,created_at"
         )
         .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
+        .order("created_at", {
+          ascending: false,
+        })
         .limit(1)
         .maybeSingle();
 
@@ -280,7 +274,7 @@ export default function ActivatePage() {
   }, [router]);
 
   useEffect(() => {
-    loadPage();
+    void loadPage();
   }, [loadPage]);
 
   useEffect(() => {
@@ -298,12 +292,12 @@ export default function ActivatePage() {
 
       setCopied(label);
 
-      setTimeout(() => {
+      window.setTimeout(() => {
         setCopied("");
       }, 1800);
     } catch {
       setError(
-        "Copy nahi ho saka. Address manually copy karein."
+        "Copy nahi ho saka. Details manually copy karein."
       );
     }
   }
@@ -336,17 +330,12 @@ export default function ActivatePage() {
 
     if (method === "bank" && !isPakistan) {
       setError(
-        "Bank transfer sirf Pakistan ke liye available hai."
+        "JazzCash payment sirf Pakistan ke liye available hai."
       );
       return;
     }
 
     if (method === "bank") {
-      if (!bankName.trim()) {
-        setError("Bank name enter karein.");
-        return;
-      }
-
       if (!senderName.trim()) {
         setError("Sender name enter karein.");
         return;
@@ -354,7 +343,7 @@ export default function ActivatePage() {
 
       if (!senderNumber.trim()) {
         setError(
-          "Sender account/mobile number enter karein."
+          "Sender JazzCash / mobile number enter karein."
         );
         return;
       }
@@ -395,7 +384,9 @@ export default function ActivatePage() {
         )
         .eq("user_id", user.id)
         .eq("status", "pending")
-        .order("created_at", { ascending: false })
+        .order("created_at", {
+          ascending: false,
+        })
         .limit(1)
         .maybeSingle();
 
@@ -416,21 +407,16 @@ export default function ActivatePage() {
           JSON.stringify(pendingActivation)
         );
 
-        /*
-         * Already pending hai to dashboard.
-         */
         router.replace("/dashboard");
         router.refresh();
         return;
       }
 
       /*
-       * Current activations table fields.
+       * Keep database field compatible with
+       * existing activations table.
        *
-       * Note:
-       * bankName, senderName, senderNumber aur note current
-       * activations table mein assumed columns nahi hain,
-       * is liye unko fake DB columns mein insert nahi kar rahe.
+       * Customer UI shows JazzCash.
        */
       const activationData = {
         user_id: user.id,
@@ -480,10 +466,6 @@ export default function ActivatePage() {
         return;
       }
 
-      /*
-       * Local storage sirf UI convenience ke liye.
-       * Database actual source of truth hai.
-       */
       localStorage.setItem(
         "earnNovaSelectedPlan",
         JSON.stringify(selectedPlan)
@@ -496,10 +478,6 @@ export default function ActivatePage() {
 
       setActivation(data as Activation);
 
-      /*
-       * IMPORTANT:
-       * Submit successful hone ke foran baad dashboard.
-       */
       router.replace("/dashboard");
       router.refresh();
 
@@ -544,7 +522,6 @@ export default function ActivatePage() {
 
   return (
     <main className="min-h-screen bg-[#050b16] text-white">
-      {/* BACKGROUND GLOW */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute left-[-150px] top-[-150px] h-[400px] w-[400px] rounded-full bg-blue-600/10 blur-[100px]" />
 
@@ -553,7 +530,6 @@ export default function ActivatePage() {
         <div className="absolute bottom-[-150px] left-[30%] h-[350px] w-[350px] rounded-full bg-blue-500/5 blur-[100px]" />
       </div>
 
-      {/* HEADER */}
       <header className="relative z-10 border-b border-white/10 bg-[#07101f]/90 backdrop-blur-xl">
         <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Brand />
@@ -569,14 +545,14 @@ export default function ActivatePage() {
               Back to Plans
             </span>
 
-            <span className="sm:hidden">Back</span>
+            <span className="sm:hidden">
+              Back
+            </span>
           </button>
         </div>
       </header>
 
-      {/* CONTENT */}
       <section className="relative z-10 mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-        {/* HERO */}
         <div className="mb-8">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-blue-400">
             <ShieldCheck className="h-3.5 w-3.5" />
@@ -593,12 +569,11 @@ export default function ActivatePage() {
           </h2>
 
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">
-            Payment submit karein aur EarnNova Team aapki
-            activation verify karegi.
+            Payment submit karein aur EarnNova Team
+            aapki activation verify karegi.
           </p>
         </div>
 
-        {/* ERROR */}
         {error && (
           <div className="mb-6 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-300">
             {error}
@@ -624,7 +599,6 @@ export default function ActivatePage() {
               </div>
             </div>
 
-            {/* TOTAL */}
             <div className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.07] p-5">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Total Amount
@@ -646,7 +620,6 @@ export default function ActivatePage() {
               </p>
             </div>
 
-            {/* DETAILS */}
             <div className="mt-5 space-y-3">
               <div className="flex items-center justify-between border-b border-white/5 pb-3">
                 <span className="text-sm text-slate-400">
@@ -654,7 +627,9 @@ export default function ActivatePage() {
                 </span>
 
                 <span className="text-sm font-bold text-white">
-                  {formatUsd(selectedPlan.totalPrice)}
+                  {formatUsd(
+                    selectedPlan.totalPrice
+                  )}
                 </span>
               </div>
 
@@ -689,7 +664,6 @@ export default function ActivatePage() {
               </div>
             </div>
 
-            {/* SECURITY */}
             <div className="mt-6 rounded-2xl border border-white/5 bg-black/20 p-4">
               <div className="flex gap-3">
                 <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
@@ -700,8 +674,9 @@ export default function ActivatePage() {
                   </p>
 
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Payment submit hone ke baad EarnNova Team
-                    transaction verify karegi.
+                    Payment submit hone ke baad
+                    EarnNova Team transaction
+                    verify karegi.
                   </p>
                 </div>
               </div>
@@ -768,7 +743,7 @@ export default function ActivatePage() {
                   </label>
 
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {/* BANK */}
+                    {/* JAZZCASH */}
                     {isPakistan && (
                       <button
                         type="button"
@@ -788,7 +763,7 @@ export default function ActivatePage() {
 
                           <div>
                             <p className="text-sm font-bold text-white">
-                              Bank Transfer
+                              JazzCash
                             </p>
 
                             <p className="text-xs text-slate-500">
@@ -831,118 +806,110 @@ export default function ActivatePage() {
                 </div>
               )}
 
-              {/* BANK PAYMENT */}
-              {method === "bank" && isPakistan && (
-                <div className="space-y-4 rounded-2xl border border-blue-500/10 bg-blue-500/[0.04] p-4">
-                  <div>
-                    <p className="mb-3 text-sm font-black text-white">
-                      Bank Payment
-                    </p>
+              {/* JAZZCASH PAYMENT */}
+              {method === "bank" &&
+                isPakistan && (
+                  <div className="space-y-4 rounded-2xl border border-blue-500/10 bg-blue-500/[0.04] p-4">
+                    <div>
+                      <p className="mb-3 text-sm font-black text-white">
+                        JazzCash Payment
+                      </p>
 
-                    <div className="space-y-3">
-                      <div className="rounded-xl border border-white/5 bg-black/20 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                          Bank
-                        </p>
-
-                        <p className="mt-1 text-sm font-bold text-white">
-                          Bank Alfalah
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl border border-white/5 bg-black/20 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                          Account Title
-                        </p>
-
-                        <p className="mt-1 text-sm font-bold text-white">
-                          ASIFA SALEEM
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-black/20 p-3">
-                        <div className="min-w-0">
+                      <div className="space-y-3">
+                        {/* ACCOUNT */}
+                        <div className="rounded-xl border border-white/5 bg-black/20 p-3">
                           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                            Account Number
+                            Account
                           </p>
 
-                          <p className="mt-1 break-all text-sm font-bold text-white">
-                            {BANK_ACCOUNT}
+                          <p className="mt-1 text-sm font-bold text-white">
+                            {JAZZCASH_ACCOUNT}
                           </p>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            copyText(
-                              BANK_ACCOUNT,
-                              "bank"
-                            )
-                          }
-                          className="shrink-0 rounded-lg border border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white"
-                        >
-                          {copied === "bank" ? (
-                            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </button>
+                        {/* ACCOUNT TITLE */}
+                        <div className="rounded-xl border border-white/5 bg-black/20 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                            Account Title
+                          </p>
+
+                          <p className="mt-1 text-sm font-bold text-white">
+                            {JAZZCASH_ACCOUNT_TITLE}
+                          </p>
+                        </div>
+
+                        {/* IBAN */}
+                        <div className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-black/20 p-3">
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                              IBAN
+                            </p>
+
+                            <p className="mt-1 break-all text-sm font-bold text-white">
+                              {JAZZCASH_IBAN}
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              copyText(
+                                JAZZCASH_IBAN,
+                                "jazzcash"
+                              )
+                            }
+                            className="shrink-0 rounded-lg border border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white"
+                          >
+                            {copied ===
+                            "jazzcash" ? (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </div>
+
+                    {/* SENDER NAME */}
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-slate-200">
+                        Sender Name
+                      </label>
+
+                      <input
+                        type="text"
+                        value={senderName}
+                        onChange={(e) =>
+                          setSenderName(
+                            e.target.value
+                          )
+                        }
+                        placeholder="Payment sender name"
+                        className="h-12 w-full rounded-xl border border-white/10 bg-[#07101f] px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
+                      />
+                    </div>
+
+                    {/* SENDER NUMBER */}
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-slate-200">
+                        Sender JazzCash / Mobile
+                      </label>
+
+                      <input
+                        type="text"
+                        value={senderNumber}
+                        onChange={(e) =>
+                          setSenderNumber(
+                            e.target.value
+                          )
+                        }
+                        placeholder="JazzCash mobile number"
+                        className="h-12 w-full rounded-xl border border-white/10 bg-[#07101f] px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
+                      />
+                    </div>
                   </div>
-
-                  {/* BANK NAME */}
-                  <div>
-                    <label className="mb-2 block text-sm font-bold text-slate-200">
-                      Your Bank Name
-                    </label>
-
-                    <input
-                      type="text"
-                      value={bankName}
-                      onChange={(e) =>
-                        setBankName(e.target.value)
-                      }
-                      placeholder="e.g. HBL"
-                      className="h-12 w-full rounded-xl border border-white/10 bg-[#07101f] px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
-                    />
-                  </div>
-
-                  {/* SENDER NAME */}
-                  <div>
-                    <label className="mb-2 block text-sm font-bold text-slate-200">
-                      Sender Name
-                    </label>
-
-                    <input
-                      type="text"
-                      value={senderName}
-                      onChange={(e) =>
-                        setSenderName(e.target.value)
-                      }
-                      placeholder="Payment sender name"
-                      className="h-12 w-full rounded-xl border border-white/10 bg-[#07101f] px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
-                    />
-                  </div>
-
-                  {/* SENDER NUMBER */}
-                  <div>
-                    <label className="mb-2 block text-sm font-bold text-slate-200">
-                      Sender Account / Mobile
-                    </label>
-
-                    <input
-                      type="text"
-                      value={senderNumber}
-                      onChange={(e) =>
-                        setSenderNumber(e.target.value)
-                      }
-                      placeholder="Account or mobile number"
-                      className="h-12 w-full rounded-xl border border-white/10 bg-[#07101f] px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
-                    />
-                  </div>
-                </div>
-              )}
+                )}
 
               {/* CRYPTO PAYMENT */}
               {method === "crypto" && (
@@ -953,7 +920,8 @@ export default function ActivatePage() {
                     </p>
 
                     <p className="mt-1 text-xs leading-5 text-slate-500">
-                      Sirf USDT TRC20 network use karein.
+                      Sirf USDT TRC20 network use
+                      karein.
                     </p>
                   </div>
 
@@ -964,20 +932,21 @@ export default function ActivatePage() {
 
                     <div className="mt-2 flex items-start gap-3">
                       <p className="min-w-0 flex-1 break-all text-xs font-bold leading-5 text-white">
-                        {USDT_WALLET}
+                        TAWgQk5vdz964jxps2nYjTAj6c8WRpp4hb
                       </p>
 
                       <button
                         type="button"
                         onClick={() =>
                           copyText(
-                            USDT_WALLET,
+                            "TAWgQk5vdz964jxps2nYjTAj6c8WRpp4hb",
                             "crypto"
                           )
                         }
                         className="shrink-0 rounded-lg border border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white"
                       >
-                        {copied === "crypto" ? (
+                        {copied ===
+                        "crypto" ? (
                           <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                         ) : (
                           <Copy className="h-4 w-4" />
@@ -988,8 +957,9 @@ export default function ActivatePage() {
 
                   <div className="rounded-xl border border-amber-500/10 bg-amber-500/5 p-3">
                     <p className="text-xs leading-5 text-amber-300">
-                      Network carefully check karein. TRC20 ke
-                      ilawa kisi network par payment na bhejein.
+                      Network carefully check karein.
+                      TRC20 ke ilawa kisi network par
+                      payment na bhejein.
                     </p>
                   </div>
                 </div>
@@ -1045,7 +1015,9 @@ export default function ActivatePage() {
               {/* SUBMIT */}
               <button
                 type="submit"
-                disabled={submitting || !method}
+                disabled={
+                  submitting || !method
+                }
                 className="flex h-13 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {submitting ? (
@@ -1062,8 +1034,8 @@ export default function ActivatePage() {
               </button>
 
               <p className="text-center text-[11px] leading-5 text-slate-600">
-                Submit karne ke baad request verification ke liye
-                EarnNova Team ko chali jayegi.
+                Submit karne ke baad request verification
+                ke liye EarnNova Team ko chali jayegi.
               </p>
             </form>
           </div>

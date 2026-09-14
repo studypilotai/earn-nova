@@ -49,20 +49,44 @@ type Activation = {
   updated_at: string | null;
 };
 
+/* =========================================================
+   ACTIVE EARNNOVA PLANS
+========================================================= */
+
+const ACTIVE_PLANS = new Set([
+  "starter",
+  "basic",
+  "pro",
+  "premium",
+  "vip",
+]);
+
 export default function DashboardPage() {
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] =
+    useState<Profile | null>(null);
 
   const [activationRequest, setActivationRequest] =
     useState<Activation | null>(null);
 
-  const [loading, setLoading] = useState(true);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [showPending, setShowPending] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [loading, setLoading] =
+    useState(true);
+
+  const [menuOpen, setMenuOpen] =
+    useState(false);
+
+  const [showPending, setShowPending] =
+    useState(false);
+
+  const [errorMessage, setErrorMessage] =
+    useState("");
 
   useEffect(() => {
     loadProfile();
   }, []);
+
+  /* =========================================================
+     LOAD PROFILE
+  ========================================================= */
 
   async function loadProfile() {
     setLoading(true);
@@ -75,7 +99,10 @@ export default function DashboardPage() {
       } = await supabase.auth.getUser();
 
       if (userError) {
-        console.error("AUTH ERROR:", userError);
+        console.error(
+          "AUTH ERROR:",
+          userError
+        );
 
         setErrorMessage(
           "Unable to verify your login session."
@@ -89,11 +116,14 @@ export default function DashboardPage() {
         return;
       }
 
-      /*
-       * LOAD PROFILE
-       */
+      /* =====================================================
+         LOAD PROFILE
+      ===================================================== */
 
-      const { data, error } = await supabase
+      const {
+        data,
+        error,
+      } = await supabase
         .from("profiles")
         .select(`
           id,
@@ -112,7 +142,10 @@ export default function DashboardPage() {
         .maybeSingle();
 
       if (error) {
-        console.error("PROFILE ERROR:", error);
+        console.error(
+          "PROFILE ERROR:",
+          error
+        );
 
         setErrorMessage(
           error.message ||
@@ -130,6 +163,21 @@ export default function DashboardPage() {
         return;
       }
 
+      /* =====================================================
+         ADMIN ACCOUNT PROTECTION
+
+         Customer dashboard should never be used by admin.
+      ===================================================== */
+
+      if (
+        "role" in data &&
+        (data as { role?: string }).role ===
+          "admin"
+      ) {
+        window.location.replace("/admin");
+        return;
+      }
+
       setProfile({
         id: data.id,
 
@@ -143,7 +191,9 @@ export default function DashboardPage() {
           user.email ??
           null,
 
-        wallet: Number(data.wallet ?? 0),
+        wallet: Number(
+          data.wallet ?? 0
+        ),
 
         pending_balance: Number(
           data.pending_balance ?? 0
@@ -171,9 +221,9 @@ export default function DashboardPage() {
           data.block_reason ?? null,
       });
 
-      /*
-       * LOAD LATEST PENDING ACTIVATION
-       */
+      /* =====================================================
+         LOAD LATEST PENDING ACTIVATION
+      ===================================================== */
 
       const {
         data: activationData,
@@ -232,9 +282,9 @@ export default function DashboardPage() {
     }
   }
 
-  /*
-   * LOGOUT
-   */
+  /* =========================================================
+     LOGOUT
+  ========================================================= */
 
   async function logout() {
     try {
@@ -264,6 +314,10 @@ export default function DashboardPage() {
         "earnNovaActivation"
       );
 
+      localStorage.removeItem(
+        "earnNovaReferralCode"
+      );
+
       window.location.replace("/login");
     } catch (error) {
       console.error(
@@ -275,9 +329,9 @@ export default function DashboardPage() {
     }
   }
 
-  /*
-   * LOADING
-   */
+  /* =========================================================
+     LOADING
+  ========================================================= */
 
   if (loading) {
     return (
@@ -293,9 +347,9 @@ export default function DashboardPage() {
     );
   }
 
-  /*
-   * ERROR
-   */
+  /* =========================================================
+     ERROR
+  ========================================================= */
 
   if (errorMessage || !profile) {
     return (
@@ -334,9 +388,9 @@ export default function DashboardPage() {
     );
   }
 
-  /*
-   * BLOCKED ACCOUNT
-   */
+  /* =========================================================
+     BLOCKED ACCOUNT
+  ========================================================= */
 
   if (profile.is_blocked) {
     return (
@@ -389,9 +443,9 @@ export default function DashboardPage() {
     );
   }
 
-  /*
-   * PROFILE VALUES
-   */
+  /* =========================================================
+     PROFILE VALUES
+  ========================================================= */
 
   const balance = Number(
     profile.wallet ?? 0
@@ -420,24 +474,23 @@ export default function DashboardPage() {
     profile.full_name?.trim() ||
     "Member";
 
-  /*
-   * MEMBERSHIP STATUS
-   */
+  /* =========================================================
+     MEMBERSHIP STATUS
+
+     ONLY THESE 5 PLANS CAN UNLOCK EARNING.
+  ========================================================= */
 
   const normalizedMembership =
     membership.toLowerCase().trim();
 
   const hasActivePlan =
-    normalizedMembership !== "" &&
-    normalizedMembership !== "free" &&
-    normalizedMembership !== "no plan" &&
-    normalizedMembership !== "none" &&
-    normalizedMembership !== "inactive" &&
-    normalizedMembership !== "pending";
+    ACTIVE_PLANS.has(
+      normalizedMembership
+    );
 
-  /*
-   * ACTIVATION STATUS
-   */
+  /* =========================================================
+     ACTIVATION STATUS
+  ========================================================= */
 
   const requestStatus =
     activationRequest?.status
@@ -447,9 +500,9 @@ export default function DashboardPage() {
   const hasPendingActivation =
     requestStatus === "pending";
 
-  /*
-   * PLAN DISPLAY
-   */
+  /* =========================================================
+     PLAN DISPLAY
+  ========================================================= */
 
   const planDisplay =
     hasPendingActivation
@@ -458,9 +511,13 @@ export default function DashboardPage() {
       ? membership
       : "No Plan";
 
-  /*
-   * PROTECTED LINKS
-   */
+  /* =========================================================
+     PROTECTED LINKS
+
+     ACTIVE PLAN → ACTUAL PAGE
+     PENDING → MODAL
+     NO PLAN → /plans
+  ========================================================= */
 
   const earningHref = (
     href: string
@@ -497,9 +554,9 @@ export default function DashboardPage() {
       ? "#activation-pending"
       : "/plans";
 
-  /*
-   * PROTECTED CLICK
-   */
+  /* =========================================================
+     PROTECTED CLICK
+  ========================================================= */
 
   const handleProtectedClick = (
     event: MouseEvent<HTMLAnchorElement>,
@@ -515,7 +572,9 @@ export default function DashboardPage() {
     <main className="min-h-screen bg-[#070b10] px-3 py-4 text-white sm:px-5 sm:py-7">
       <div className="mx-auto w-full max-w-[570px]">
 
-        {/* HEADER */}
+        {/* =================================================
+            HEADER
+        ================================================= */}
 
         <header className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -562,7 +621,9 @@ export default function DashboardPage() {
           </button>
         </header>
 
-        {/* WELCOME */}
+        {/* =================================================
+            WELCOME
+        ================================================= */}
 
         <section className="mb-4 rounded-2xl border border-blue-500/10 bg-gradient-to-r from-blue-500/[0.06] to-transparent px-4 py-3">
           <div className="flex items-center gap-2">
@@ -581,7 +642,9 @@ export default function DashboardPage() {
           </p>
         </section>
 
-        {/* PENDING ACTIVATION */}
+        {/* =================================================
+            PENDING ACTIVATION
+        ================================================= */}
 
         {hasPendingActivation &&
           activationRequest && (
@@ -616,7 +679,9 @@ export default function DashboardPage() {
             </section>
           )}
 
-        {/* NO ACTIVE PLAN */}
+        {/* =================================================
+            NO ACTIVE PLAN
+        ================================================= */}
 
         {!hasActivePlan &&
           !hasPendingActivation && (
@@ -647,7 +712,9 @@ export default function DashboardPage() {
             </section>
           )}
 
-        {/* BALANCE */}
+        {/* =================================================
+            BALANCE
+        ================================================= */}
 
         <section className="rounded-[22px] border border-slate-800 bg-[#11151b] p-5 shadow-2xl sm:p-6">
           <div className="flex items-start justify-between gap-4">
@@ -670,8 +737,6 @@ export default function DashboardPage() {
                 Available for withdrawal
               </p>
             </div>
-
-            {/* DEPOSIT + WITHDRAW */}
 
             <div className="flex shrink-0 items-center gap-2">
               <a
@@ -708,8 +773,6 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-3">
 
-            {/* TOTAL EARNED */}
-
             <div>
               <p className="text-[9px] uppercase tracking-[0.13em] text-slate-500">
                 Total Earned
@@ -720,8 +783,6 @@ export default function DashboardPage() {
               </p>
             </div>
 
-            {/* PENDING */}
-
             <div className="border-l border-slate-800 pl-4">
               <p className="text-[9px] uppercase tracking-[0.13em] text-slate-500">
                 Pending
@@ -731,8 +792,6 @@ export default function DashboardPage() {
                 ${pendingBalance.toFixed(2)}
               </p>
             </div>
-
-            {/* PLAN */}
 
             <div className="flex justify-end">
               <div
@@ -771,7 +830,9 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* QUICK ACCESS */}
+        {/* =================================================
+            QUICK ACCESS
+        ================================================= */}
 
         <section className="mt-6">
           <div className="mb-4">
@@ -785,8 +846,6 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-
-            {/* TASKS */}
 
             <DashboardAction
               href={earningHref(
@@ -806,8 +865,6 @@ export default function DashboardPage() {
               }
             />
 
-            {/* VIDEOS */}
-
             <DashboardAction
               href={earningHref(
                 "/dashboard/videos"
@@ -825,8 +882,6 @@ export default function DashboardPage() {
                   : "Activate a plan to earn"
               }
             />
-
-            {/* SPIN */}
 
             <DashboardAction
               href={earningHref(
@@ -848,8 +903,6 @@ export default function DashboardPage() {
               }
             />
 
-            {/* REFERRAL */}
-
             <DashboardAction
               href={referralHref}
               onClick={handleProtectedClick}
@@ -870,8 +923,6 @@ export default function DashboardPage() {
               }
             />
 
-            {/* ACCOUNT */}
-
             <DashboardAction
               href="/dashboard/account"
               icon={
@@ -880,8 +931,6 @@ export default function DashboardPage() {
               title="Withdraw Account"
               description="Bank & payment details"
             />
-
-            {/* PLAN */}
 
             <DashboardAction
               href="/plans"
@@ -896,8 +945,6 @@ export default function DashboardPage() {
               }
             />
 
-            {/* SETTINGS */}
-
             <DashboardAction
               href="/dashboard/settings"
               icon={
@@ -909,7 +956,9 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* TODAY */}
+        {/* =================================================
+            TODAY
+        ================================================= */}
 
         <section className="mt-5 rounded-[20px] border border-slate-800 bg-[#11151b] p-5">
           <div className="flex items-center justify-between">
@@ -937,7 +986,9 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* SUPPORT */}
+        {/* =================================================
+            SUPPORT
+        ================================================= */}
 
         <section className="mt-5">
           <a
@@ -969,7 +1020,9 @@ export default function DashboardPage() {
           </a>
         </section>
 
-        {/* FOOTER */}
+        {/* =================================================
+            FOOTER
+        ================================================= */}
 
         <footer className="py-7 text-center">
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-700">
@@ -982,7 +1035,9 @@ export default function DashboardPage() {
         </footer>
       </div>
 
-      {/* MOBILE MENU BUTTON */}
+      {/* ===================================================
+          MOBILE MENU BUTTON
+      =================================================== */}
 
       <button
         onClick={() =>
@@ -998,7 +1053,9 @@ export default function DashboardPage() {
         )}
       </button>
 
-      {/* MOBILE MENU */}
+      {/* ===================================================
+          MOBILE MENU
+      =================================================== */}
 
       {menuOpen && (
         <div className="fixed bottom-20 right-5 z-40 max-h-[70vh] w-60 overflow-y-auto rounded-2xl border border-slate-800 bg-[#11151b] p-2 shadow-2xl">
@@ -1113,7 +1170,9 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* PENDING RECEIPT MODAL */}
+      {/* ===================================================
+          PENDING RECEIPT MODAL
+      =================================================== */}
 
       {showPending &&
         activationRequest && (
@@ -1231,7 +1290,7 @@ export default function DashboardPage() {
                   <p className="mt-2 text-[10px] leading-5 text-slate-500">
                     Your payment has been submitted
                     and is currently being reviewed by
-                    the EarnNova admin team. Earning
+                    the EarnNova Team. Earning
                     features will unlock after approval.
                   </p>
                 </div>
@@ -1252,9 +1311,9 @@ export default function DashboardPage() {
   );
 }
 
-/*
- * DASHBOARD ACTION
- */
+/* =========================================================
+   DASHBOARD ACTION
+========================================================= */
 
 function DashboardAction({
   href,
@@ -1307,9 +1366,9 @@ function DashboardAction({
   );
 }
 
-/*
- * MOBILE MENU ITEM
- */
+/* =========================================================
+   MOBILE MENU ITEM
+========================================================= */
 
 function MobileItem({
   href,
@@ -1344,9 +1403,9 @@ function MobileItem({
   );
 }
 
-/*
- * RECEIPT ROW
- */
+/* =========================================================
+   RECEIPT ROW
+========================================================= */
 
 function ReceiptRow({
   label,

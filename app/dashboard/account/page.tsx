@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
 import {
   ArrowLeft,
   Save,
@@ -14,10 +14,7 @@ import {
   Loader2,
 } from "lucide-react";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const supabase = createClient();
 
 type WithdrawalAccount = {
   id: string;
@@ -47,81 +44,121 @@ export default function AccountPage() {
   const [savedAccount, setSavedAccount] =
     useState<WithdrawalAccount | null>(null);
 
-  useEffect(() => {
-    loadAccount();
-  }, []);
-
   /* =========================================================
-     LOAD WITHDRAWAL ACCOUNT
-     ========================================================= */
+     LOAD ACCOUNT
+  ========================================================= */
 
-  async function loadAccount() {
-    try {
-      setLoading(true);
+  useEffect(() => {
+    let mounted = true;
 
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
+    async function loadAccount() {
+      try {
+        setLoading(true);
 
-      if (authError) {
-        console.error(authError);
-      }
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
 
-      if (!user) {
-        router.replace("/login");
-        return;
-      }
+        if (authError || !user) {
+          if (authError) {
+            console.error(
+              "Withdrawal account auth error:",
+              authError
+            );
+          }
 
-      const { data, error } = await supabase
-        .from("withdrawal_accounts")
-        .select(
+          if (mounted) {
+            router.replace("/login");
+          }
+
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("withdrawal_accounts")
+          .select(
+            `
+            id,
+            user_id,
+            method,
+            account_name,
+            account_number,
+            bank_name,
+            wallet_address,
+            created_at,
+            updated_at
           `
-          id,
-          user_id,
-          method,
-          account_name,
-          account_number,
-          bank_name,
-          wallet_address,
-          created_at,
-          updated_at
-        `
-        )
-        .eq("user_id", user.id)
-        .order("created_at", {
-          ascending: false,
-        })
-        .limit(1)
-        .maybeSingle();
+          )
+          .eq("user_id", user.id)
+          .order("created_at", {
+            ascending: false,
+          })
+          .limit(1)
+          .maybeSingle();
 
-      if (error) {
-        console.error("Withdrawal account load error:", error);
-        setLoading(false);
-        return;
+        if (error) {
+          console.error(
+            "Withdrawal account load error:",
+            error
+          );
+
+          return;
+        }
+
+        if (!mounted) {
+          return;
+        }
+
+        if (data) {
+          setSavedAccount(data);
+
+          setMethod(
+            data.method || "USDT"
+          );
+
+          setBankName(
+            data.bank_name || ""
+          );
+
+          setAccountName(
+            data.account_name || ""
+          );
+
+          setAccountNumber(
+            data.account_number || ""
+          );
+
+          setWalletAddress(
+            data.wallet_address || ""
+          );
+        }
+      } catch (error) {
+        console.error(
+          "Unexpected load error:",
+          error
+        );
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
       }
-
-      if (data) {
-        setSavedAccount(data);
-
-        setMethod(data.method || "USDT");
-        setBankName(data.bank_name || "");
-        setAccountName(data.account_name || "");
-        setAccountNumber(data.account_number || "");
-        setWalletAddress(data.wallet_address || "");
-      }
-    } catch (error) {
-      console.error("Unexpected load error:", error);
-    } finally {
-      setLoading(false);
     }
-  }
+
+    loadAccount();
+
+    return () => {
+      mounted = false;
+    };
+  }, [router]);
 
   /* =========================================================
      CHANGE METHOD
-     ========================================================= */
+  ========================================================= */
 
-  function handleMethodChange(newMethod: string) {
+  function handleMethodChange(
+    newMethod: string
+  ) {
     setMethod(newMethod);
 
     if (newMethod === "USDT") {
@@ -142,69 +179,87 @@ export default function AccountPage() {
 
   /* =========================================================
      SAVE / UPDATE ACCOUNT
-     ========================================================= */
+  ========================================================= */
 
   async function saveAccount() {
     if (saving) return;
 
-    /* ===============================
-       BASIC METHOD VALIDATION
-       =============================== */
+    /* =======================================================
+       BASIC VALIDATION
+    ======================================================= */
 
     if (!method) {
-      alert("Please select a withdrawal method.");
+      alert(
+        "Please select a withdrawal method."
+      );
       return;
     }
 
-    /* ===============================
+    /* =======================================================
        USDT VALIDATION
-       =============================== */
+    ======================================================= */
 
     if (method === "USDT") {
       if (!walletAddress.trim()) {
-        alert("Please enter your USDT wallet address.");
+        alert(
+          "Please enter your USDT wallet address."
+        );
         return;
       }
 
-      if (walletAddress.trim().length < 20) {
-        alert("Please enter a valid USDT wallet address.");
+      if (
+        walletAddress.trim().length < 20
+      ) {
+        alert(
+          "Please enter a valid USDT wallet address."
+        );
         return;
       }
     }
 
-    /* ===============================
+    /* =======================================================
        BANK VALIDATION
-       =============================== */
+    ======================================================= */
 
     if (method === "Bank") {
       if (!bankName.trim()) {
-        alert("Please enter bank name.");
+        alert(
+          "Please enter bank name."
+        );
         return;
       }
 
       if (!accountName.trim()) {
-        alert("Please enter account holder name.");
+        alert(
+          "Please enter account holder name."
+        );
         return;
       }
 
       if (!accountNumber.trim()) {
-        alert("Please enter account number or IBAN.");
+        alert(
+          "Please enter account number or IBAN."
+        );
         return;
       }
     }
 
-    /* ===============================
+    /* =======================================================
        UPAISA VALIDATION
-       =============================== */
+    ======================================================= */
 
     if (method === "UPaisa") {
       if (!accountName.trim()) {
-        alert("Please enter account holder name.");
+        alert(
+          "Please enter account holder name."
+        );
         return;
       }
 
       if (!accountNumber.trim()) {
-        alert("Please enter your UPaisa account number.");
+        alert(
+          "Please enter your UPaisa account number."
+        );
         return;
       }
     }
@@ -212,23 +267,38 @@ export default function AccountPage() {
     setSaving(true);
 
     try {
+      /* =====================================================
+         VERIFY SESSION
+      ===================================================== */
+
       const {
         data: { user },
         error: authError,
       } = await supabase.auth.getUser();
 
-      if (authError) {
-        console.error(authError);
-      }
+      if (authError || !user) {
+        if (authError) {
+          console.error(
+            "Withdrawal save auth error:",
+            authError
+          );
+        }
 
-      if (!user) {
         router.replace("/login");
         return;
       }
 
-      /* ===============================
+      /* =====================================================
          ACCOUNT DATA
-         =============================== */
+
+         Matches current withdrawal_accounts table:
+         - method
+         - bank_name
+         - account_name
+         - account_number
+         - wallet_address
+         - updated_at
+      ===================================================== */
 
       const accountData = {
         method,
@@ -253,15 +323,19 @@ export default function AccountPage() {
             ? walletAddress.trim()
             : null,
 
-        updated_at: new Date().toISOString(),
+        updated_at:
+          new Date().toISOString(),
       };
 
-      /* ===============================
+      /* =====================================================
          UPDATE EXISTING ACCOUNT
-         =============================== */
+      ===================================================== */
 
       if (savedAccount) {
-        const { data, error } = await supabase
+        const {
+          data,
+          error,
+        } = await supabase
           .from("withdrawal_accounts")
           .update(accountData)
           .eq("id", savedAccount.id)
@@ -282,22 +356,36 @@ export default function AccountPage() {
           .single();
 
         if (error) {
-          console.error("Account update error:", error);
-          alert(error.message);
+          console.error(
+            "Account update error:",
+            error
+          );
+
+          alert(
+            error.message ||
+              "Unable to update withdrawal account."
+          );
+
           return;
         }
 
         setSavedAccount(data);
 
-        alert("Withdrawal account updated successfully.");
+        alert(
+          "Withdrawal account updated successfully."
+        );
+
         return;
       }
 
-      /* ===============================
+      /* =====================================================
          CREATE NEW ACCOUNT
-         =============================== */
+      ===================================================== */
 
-      const { data, error } = await supabase
+      const {
+        data,
+        error,
+      } = await supabase
         .from("withdrawal_accounts")
         .insert({
           user_id: user.id,
@@ -319,17 +407,33 @@ export default function AccountPage() {
         .single();
 
       if (error) {
-        console.error("Account insert error:", error);
-        alert(error.message);
+        console.error(
+          "Account insert error:",
+          error
+        );
+
+        alert(
+          error.message ||
+            "Unable to save withdrawal account."
+        );
+
         return;
       }
 
       setSavedAccount(data);
 
-      alert("Withdrawal account saved successfully.");
+      alert(
+        "Withdrawal account saved successfully."
+      );
     } catch (error) {
-      console.error("Unexpected save error:", error);
-      alert("Something went wrong. Please try again.");
+      console.error(
+        "Unexpected save error:",
+        error
+      );
+
+      alert(
+        "Something went wrong. Please try again."
+      );
     } finally {
       setSaving(false);
     }
@@ -337,13 +441,14 @@ export default function AccountPage() {
 
   /* =========================================================
      LOADING SCREEN
-     ========================================================= */
+  ========================================================= */
 
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#070b10] text-white">
         <div className="flex items-center gap-3 text-sm text-slate-400">
           <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+
           Loading account...
         </div>
       </div>
@@ -352,20 +457,22 @@ export default function AccountPage() {
 
   /* =========================================================
      MAIN PAGE
-     ========================================================= */
+  ========================================================= */
 
   return (
     <main className="min-h-screen bg-[#070b10] px-4 py-6 text-white sm:px-6 sm:py-8">
       <div className="mx-auto max-w-2xl">
 
-        {/* =====================================================
+        {/* ===================================================
             HEADER
-            ===================================================== */}
+        =================================================== */}
 
         <div className="mb-7 flex items-center gap-4">
           <button
             type="button"
-            onClick={() => router.push("/dashboard")}
+            onClick={() =>
+              router.push("/dashboard")
+            }
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-[#11151b] text-slate-300 transition hover:border-slate-700 hover:bg-[#161b22] hover:text-white"
             aria-label="Back to dashboard"
           >
@@ -378,14 +485,15 @@ export default function AccountPage() {
             </h1>
 
             <p className="mt-1 text-sm text-slate-500">
-              Add the account where you want to receive your earnings.
+              Add the account where you want to receive
+              your earnings.
             </p>
           </div>
         </div>
 
-        {/* =====================================================
+        {/* ===================================================
             SAVED STATUS
-            ===================================================== */}
+        =================================================== */}
 
         {savedAccount && (
           <div className="mb-6 flex items-start gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
@@ -399,16 +507,16 @@ export default function AccountPage() {
               </p>
 
               <p className="mt-1 text-sm leading-5 text-slate-400">
-                Your withdrawal receiving details are ready. You can
-                update them anytime.
+                Your withdrawal receiving details are ready.
+                You can update them anytime.
               </p>
             </div>
           </div>
         )}
 
-        {/* =====================================================
+        {/* ===================================================
             FORM CARD
-            ===================================================== */}
+        =================================================== */}
 
         <div className="rounded-3xl border border-slate-800 bg-[#11151b] p-5 shadow-2xl sm:p-6">
 
@@ -430,9 +538,9 @@ export default function AccountPage() {
             </div>
           </div>
 
-          {/* ===================================================
+          {/* =================================================
               METHOD
-              =================================================== */}
+          ================================================= */}
 
           <div className="mb-6">
             <label
@@ -446,23 +554,32 @@ export default function AccountPage() {
               id="withdrawal-method"
               value={method}
               onChange={(e) =>
-                handleMethodChange(e.target.value)
+                handleMethodChange(
+                  e.target.value
+                )
               }
               className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3.5 text-sm text-white outline-none transition focus:border-blue-500"
             >
-              <option value="USDT">USDT</option>
-              <option value="Bank">Bank Account</option>
-              <option value="UPaisa">UPaisa</option>
+              <option value="USDT">
+                USDT
+              </option>
+
+              <option value="Bank">
+                Bank Account
+              </option>
+
+              <option value="UPaisa">
+                UPaisa
+              </option>
             </select>
           </div>
 
-          {/* ===================================================
+          {/* =================================================
               USDT
-              =================================================== */}
+          ================================================= */}
 
           {method === "USDT" && (
             <div className="space-y-5">
-
               <div>
                 <label
                   htmlFor="wallet-address"
@@ -475,7 +592,9 @@ export default function AccountPage() {
                   id="wallet-address"
                   value={walletAddress}
                   onChange={(e) =>
-                    setWalletAddress(e.target.value)
+                    setWalletAddress(
+                      e.target.value
+                    )
                   }
                   placeholder="Enter your USDT wallet address"
                   rows={4}
@@ -484,8 +603,8 @@ export default function AccountPage() {
                 />
 
                 <p className="mt-2 text-xs leading-5 text-slate-500">
-                  Make sure your wallet address and supported USDT
-                  network are correct before saving.
+                  Make sure your wallet address and supported
+                  USDT network are correct before saving.
                 </p>
               </div>
 
@@ -493,22 +612,21 @@ export default function AccountPage() {
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
 
                 <p className="text-xs leading-5 text-slate-400">
-                  Incorrect wallet details may cause your withdrawal
-                  to fail or become unrecoverable. Always verify the
-                  address before submitting a withdrawal.
+                  Incorrect wallet details may cause your
+                  withdrawal to fail or become unrecoverable.
+                  Always verify the address before submitting
+                  a withdrawal.
                 </p>
               </div>
             </div>
           )}
 
-          {/* ===================================================
+          {/* =================================================
               BANK ACCOUNT
-              =================================================== */}
+          ================================================= */}
 
           {method === "Bank" && (
             <div className="space-y-5">
-
-              {/* BANK NAME */}
 
               <div>
                 <label
@@ -524,15 +642,15 @@ export default function AccountPage() {
                   type="text"
                   value={bankName}
                   onChange={(e) =>
-                    setBankName(e.target.value)
+                    setBankName(
+                      e.target.value
+                    )
                   }
                   placeholder="Enter bank name"
                   autoComplete="organization"
                   className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500"
                 />
               </div>
-
-              {/* ACCOUNT NAME */}
 
               <div>
                 <label
@@ -547,15 +665,15 @@ export default function AccountPage() {
                   type="text"
                   value={accountName}
                   onChange={(e) =>
-                    setAccountName(e.target.value)
+                    setAccountName(
+                      e.target.value
+                    )
                   }
                   placeholder="Enter account holder name"
                   autoComplete="name"
                   className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500"
                 />
               </div>
-
-              {/* ACCOUNT NUMBER */}
 
               <div>
                 <label
@@ -570,25 +688,24 @@ export default function AccountPage() {
                   type="text"
                   value={accountNumber}
                   onChange={(e) =>
-                    setAccountNumber(e.target.value)
+                    setAccountNumber(
+                      e.target.value
+                    )
                   }
                   placeholder="Enter account number or IBAN"
                   autoComplete="off"
                   className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500"
                 />
               </div>
-
             </div>
           )}
 
-          {/* ===================================================
+          {/* =================================================
               UPAISA
-              =================================================== */}
+          ================================================= */}
 
           {method === "UPaisa" && (
             <div className="space-y-5">
-
-              {/* ACCOUNT NAME */}
 
               <div>
                 <label
@@ -603,15 +720,15 @@ export default function AccountPage() {
                   type="text"
                   value={accountName}
                   onChange={(e) =>
-                    setAccountName(e.target.value)
+                    setAccountName(
+                      e.target.value
+                    )
                   }
                   placeholder="Enter account holder name"
                   autoComplete="name"
                   className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500"
                 />
               </div>
-
-              {/* ACCOUNT NUMBER */}
 
               <div>
                 <label
@@ -627,20 +744,21 @@ export default function AccountPage() {
                   inputMode="numeric"
                   value={accountNumber}
                   onChange={(e) =>
-                    setAccountNumber(e.target.value)
+                    setAccountNumber(
+                      e.target.value
+                    )
                   }
                   placeholder="Enter UPaisa number"
                   autoComplete="tel"
                   className="w-full rounded-xl border border-slate-800 bg-[#0b0f14] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500"
                 />
               </div>
-
             </div>
           )}
 
-          {/* ===================================================
+          {/* =================================================
               SAVE BUTTON
-              =================================================== */}
+          ================================================= */}
 
           <button
             type="button"
@@ -659,6 +777,7 @@ export default function AccountPage() {
             ) : (
               <>
                 <Save size={18} />
+
                 {savedAccount
                   ? "Update Account"
                   : "Save Account"}
@@ -667,13 +786,11 @@ export default function AccountPage() {
           </button>
         </div>
 
-        {/* =====================================================
+        {/* =================================================
             SECURITY / FEE INFO
-            ===================================================== */}
+        ================================================= */}
 
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
-
-          {/* SECURITY */}
 
           <div className="rounded-2xl border border-slate-800 bg-[#11151b] p-5">
             <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600/10 text-blue-400">
@@ -685,12 +802,10 @@ export default function AccountPage() {
             </p>
 
             <p className="mt-1.5 text-xs leading-5 text-slate-500">
-              Only use a withdrawal account that belongs to you.
-              Check your details carefully before saving.
+              Only use a withdrawal account that belongs to
+              you. Check your details carefully before saving.
             </p>
           </div>
-
-          {/* FEE */}
 
           <div className="rounded-2xl border border-slate-800 bg-[#11151b] p-5">
             <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400">
@@ -714,13 +829,13 @@ export default function AccountPage() {
           </div>
         </div>
 
-        {/* =====================================================
+        {/* =================================================
             FOOTER NOTE
-            ===================================================== */}
+        ================================================= */}
 
         <p className="mt-6 text-center text-xs leading-5 text-slate-600">
-          Withdrawal requests are reviewed by the EarnNova Team
-          before processing.
+          Withdrawal requests are reviewed by the EarnNova
+          Team before processing.
         </p>
       </div>
     </main>

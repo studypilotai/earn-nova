@@ -1,8 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import {
+  ReactNode,
+  useEffect,
+  useState,
+} from "react";
+import {
+  usePathname,
+  useRouter,
+} from "next/navigation";
+
 import { createClient } from "@/lib/supabase/client";
+
 import {
   LayoutDashboard,
   Users,
@@ -24,7 +33,7 @@ import {
 const supabase = createClient();
 
 type AdminLayoutProps = {
-  children: React.ReactNode;
+  children: ReactNode;
 };
 
 export default function AdminLayout({
@@ -33,11 +42,18 @@ export default function AdminLayout({
   const router = useRouter();
   const pathname = usePathname();
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] =
+    useState(true);
+
   const [mobileSidebarOpen, setMobileSidebarOpen] =
     useState(false);
 
-  const isLoginPage = pathname === "/admin/login";
+  const isLoginPage =
+    pathname === "/admin/login";
+
+  /* =========================================================
+     ADMIN AUTH CHECK
+  ========================================================= */
 
   useEffect(() => {
     if (isLoginPage) {
@@ -45,16 +61,28 @@ export default function AdminLayout({
       return;
     }
 
-    checkAdmin();
+    void checkAdmin();
   }, [isLoginPage]);
+
+  /* =========================================================
+     CLOSE MOBILE SIDEBAR ON ROUTE CHANGE
+  ========================================================= */
 
   useEffect(() => {
     setMobileSidebarOpen(false);
   }, [pathname]);
 
+  /* =========================================================
+     CHECK ADMIN
+  ========================================================= */
+
   async function checkAdmin() {
     try {
       setLoading(true);
+
+      /* -------------------------------------------------------
+         GET AUTH USER
+      ------------------------------------------------------- */
 
       const {
         data: { user },
@@ -66,12 +94,22 @@ export default function AdminLayout({
         return;
       }
 
-      const { data: profile, error: profileError } =
-        await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .maybeSingle();
+      /* -------------------------------------------------------
+         GET PROFILE ROLE
+      ------------------------------------------------------- */
+
+      const {
+        data: profile,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      /* -------------------------------------------------------
+         ADMIN ROLE REQUIRED
+      ------------------------------------------------------- */
 
       if (
         profileError ||
@@ -79,41 +117,118 @@ export default function AdminLayout({
         profile.role !== "admin"
       ) {
         await supabase.auth.signOut();
+
+        clearCustomerStorage();
+
         router.replace("/admin/login");
         return;
       }
 
+      /* -------------------------------------------------------
+         ADMIN VERIFIED
+      ------------------------------------------------------- */
+
       setLoading(false);
     } catch (error) {
-      console.error("Admin auth error:", error);
+      console.error(
+        "Admin auth error:",
+        error
+      );
+
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutError) {
+        console.error(
+          "Admin sign out error:",
+          signOutError
+        );
+      }
+
+      clearCustomerStorage();
+
       router.replace("/admin/login");
     }
   }
+
+  /* =========================================================
+     CLEAR LOCAL STORAGE
+  ========================================================= */
+
+  function clearCustomerStorage() {
+    if (
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    localStorage.removeItem(
+      "earnNovaLoggedIn"
+    );
+
+    localStorage.removeItem(
+      "earnNovaUserEmail"
+    );
+
+    localStorage.removeItem(
+      "earnNovaUserName"
+    );
+
+    localStorage.removeItem(
+      "earnNovaUserId"
+    );
+
+    localStorage.removeItem(
+      "earnNovaSelectedPlan"
+    );
+
+    localStorage.removeItem(
+      "earnNovaActivation"
+    );
+
+    localStorage.removeItem(
+      "earnNovaReferralCode"
+    );
+
+    localStorage.removeItem(
+      "earnNovaRemember"
+    );
+  }
+
+  /* =========================================================
+     LOGOUT
+  ========================================================= */
 
   async function logout() {
     try {
       await supabase.auth.signOut();
     } catch (error) {
-      console.error("Logout error:", error);
+      console.error(
+        "Logout error:",
+        error
+      );
     } finally {
-      localStorage.removeItem("earnNovaLoggedIn");
-      localStorage.removeItem("earnNovaUserEmail");
-      localStorage.removeItem("earnNovaUserName");
-      localStorage.removeItem("earnNovaUserId");
-      localStorage.removeItem("earnNovaSelectedPlan");
-      localStorage.removeItem("earnNovaActivation");
-      localStorage.removeItem("earnNovaReferralCode");
-      localStorage.removeItem("earnNovaRemember");
+      clearCustomerStorage();
 
-      router.replace("/admin/login");
+      router.replace(
+        "/admin/login"
+      );
+
       router.refresh();
     }
   }
+
+  /* =========================================================
+     NAVIGATION
+  ========================================================= */
 
   function navigate(path: string) {
     setMobileSidebarOpen(false);
     router.push(path);
   }
+
+  /* =========================================================
+     ACTIVE NAV ITEM
+  ========================================================= */
 
   function isActive(path: string) {
     if (path === "/admin") {
@@ -122,32 +237,52 @@ export default function AdminLayout({
 
     return (
       pathname === path ||
-      pathname.startsWith(`${path}/`)
+      pathname.startsWith(
+        `${path}/`
+      )
     );
   }
+
+  /* =========================================================
+     ADMIN LOGIN PAGE
+     
+     IMPORTANT:
+     /admin/login must NOT show the admin sidebar.
+  ========================================================= */
 
   if (isLoginPage) {
     return <>{children}</>;
   }
+
+  /* =========================================================
+     LOADING
+  ========================================================= */
 
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-100">
         <div className="flex items-center gap-3 rounded-2xl bg-white px-6 py-4 text-sm font-medium text-slate-600 shadow-sm">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+
           Loading EarnNova Team Panel...
         </div>
       </div>
     );
   }
 
+  /* =========================================================
+     ADMIN PANEL
+  ========================================================= */
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
+
       {/* =====================================================
           DESKTOP SIDEBAR
-      ====================================================== */}
+      ===================================================== */}
 
       <aside className="fixed left-0 top-0 z-50 hidden h-screen w-64 border-r border-slate-200 bg-white lg:block">
+
         {/* LOGO */}
 
         <div className="flex h-20 items-center border-b border-slate-200 px-6">
@@ -175,17 +310,24 @@ export default function AdminLayout({
         {/* NAVIGATION */}
 
         <nav className="space-y-1 overflow-y-auto p-4 pb-24">
+
           <SidebarItem
-            icon={<LayoutDashboard size={18} />}
+            icon={
+              <LayoutDashboard size={18} />
+            }
             label="Dashboard"
             active={isActive("/admin")}
-            onClick={() => navigate("/admin")}
+            onClick={() =>
+              navigate("/admin")
+            }
           />
 
           <SidebarItem
             icon={<Users size={18} />}
             label="Users"
-            active={isActive("/admin/users")}
+            active={isActive(
+              "/admin/users"
+            )}
             onClick={() =>
               navigate("/admin/users")
             }
@@ -198,18 +340,24 @@ export default function AdminLayout({
               "/admin/activations"
             )}
             onClick={() =>
-              navigate("/admin/activations")
+              navigate(
+                "/admin/activations"
+              )
             }
           />
 
           <SidebarItem
-            icon={<WalletCards size={18} />}
+            icon={
+              <WalletCards size={18} />
+            }
             label="Deposits"
             active={isActive(
               "/admin/deposits"
             )}
             onClick={() =>
-              navigate("/admin/deposits")
+              navigate(
+                "/admin/deposits"
+              )
             }
           />
 
@@ -222,7 +370,9 @@ export default function AdminLayout({
               "/admin/withdrawals"
             )}
             onClick={() =>
-              navigate("/admin/withdrawals")
+              navigate(
+                "/admin/withdrawals"
+              )
             }
           />
 
@@ -233,18 +383,24 @@ export default function AdminLayout({
               "/admin/videos"
             )}
             onClick={() =>
-              navigate("/admin/videos")
+              navigate(
+                "/admin/videos"
+              )
             }
           />
 
           <SidebarItem
-            icon={<ListTodo size={18} />}
+            icon={
+              <ListTodo size={18} />
+            }
             label="Tasks"
             active={isActive(
               "/admin/tasks"
             )}
             onClick={() =>
-              navigate("/admin/tasks")
+              navigate(
+                "/admin/tasks"
+              )
             }
           />
 
@@ -255,7 +411,9 @@ export default function AdminLayout({
               "/admin/referrals"
             )}
             onClick={() =>
-              navigate("/admin/referrals")
+              navigate(
+                "/admin/referrals"
+              )
             }
           />
 
@@ -266,41 +424,54 @@ export default function AdminLayout({
               "/admin/add-balance"
             )}
             onClick={() =>
-              navigate("/admin/add-balance")
+              navigate(
+                "/admin/add-balance"
+              )
             }
           />
 
           <SidebarItem
-            icon={<Settings size={18} />}
+            icon={
+              <Settings size={18} />
+            }
             label="Settings"
             active={isActive(
               "/admin/settings"
             )}
             onClick={() =>
-              navigate("/admin/settings")
+              navigate(
+                "/admin/settings"
+              )
             }
           />
+
         </nav>
 
         {/* LOGOUT */}
 
         <div className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white p-4">
           <button
+            type="button"
             onClick={logout}
             className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-red-600 transition hover:bg-red-50"
           >
             <LogOut size={18} />
-            <span>Logout</span>
+
+            <span>
+              Logout
+            </span>
           </button>
         </div>
       </aside>
 
       {/* =====================================================
           MOBILE TOP BAR
-      ====================================================== */}
+      ===================================================== */}
 
       <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm lg:hidden">
+
         <div className="flex items-center">
+
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600">
             <ShieldCheck
               size={18}
@@ -320,12 +491,15 @@ export default function AdminLayout({
               Team Panel
             </div>
           </div>
+
         </div>
 
         <button
+          type="button"
           onClick={() =>
             setMobileSidebarOpen(
-              (current) => !current
+              (current) =>
+                !current
             )
           }
           className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white transition hover:bg-slate-50"
@@ -341,7 +515,7 @@ export default function AdminLayout({
 
       {/* =====================================================
           MOBILE OVERLAY
-      ====================================================== */}
+      ===================================================== */}
 
       {mobileSidebarOpen && (
         <div
@@ -354,7 +528,7 @@ export default function AdminLayout({
 
       {/* =====================================================
           MOBILE SIDEBAR
-      ====================================================== */}
+      ===================================================== */}
 
       <aside
         className={`fixed left-0 top-0 z-50 h-screen w-[280px] max-w-[85vw] transform border-r border-slate-200 bg-white shadow-2xl transition-transform duration-300 lg:hidden ${
@@ -363,10 +537,13 @@ export default function AdminLayout({
             : "-translate-x-full"
         }`}
       >
+
         {/* MOBILE HEADER */}
 
         <div className="flex h-16 items-center justify-between border-b border-slate-200 px-4">
+
           <div className="flex items-center">
+
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600">
               <ShieldCheck
                 size={18}
@@ -386,9 +563,11 @@ export default function AdminLayout({
                 Team Panel
               </div>
             </div>
+
           </div>
 
           <button
+            type="button"
             onClick={() =>
               setMobileSidebarOpen(false)
             }
@@ -397,26 +576,34 @@ export default function AdminLayout({
           >
             <X size={19} />
           </button>
+
         </div>
 
         {/* MOBILE NAV */}
 
         <nav className="space-y-1 overflow-y-auto p-3 pb-24">
+
           <MobileSidebarItem
             icon={
               <LayoutDashboard size={18} />
             }
             label="Dashboard"
             active={isActive("/admin")}
-            onClick={() => navigate("/admin")}
+            onClick={() =>
+              navigate("/admin")
+            }
           />
 
           <MobileSidebarItem
             icon={<Users size={18} />}
             label="Users"
-            active={isActive("/admin/users")}
+            active={isActive(
+              "/admin/users"
+            )}
             onClick={() =>
-              navigate("/admin/users")
+              navigate(
+                "/admin/users"
+              )
             }
           />
 
@@ -427,18 +614,24 @@ export default function AdminLayout({
               "/admin/activations"
             )}
             onClick={() =>
-              navigate("/admin/activations")
+              navigate(
+                "/admin/activations"
+              )
             }
           />
 
           <MobileSidebarItem
-            icon={<WalletCards size={18} />}
+            icon={
+              <WalletCards size={18} />
+            }
             label="Deposits"
             active={isActive(
               "/admin/deposits"
             )}
             onClick={() =>
-              navigate("/admin/deposits")
+              navigate(
+                "/admin/deposits"
+              )
             }
           />
 
@@ -451,7 +644,9 @@ export default function AdminLayout({
               "/admin/withdrawals"
             )}
             onClick={() =>
-              navigate("/admin/withdrawals")
+              navigate(
+                "/admin/withdrawals"
+              )
             }
           />
 
@@ -462,18 +657,24 @@ export default function AdminLayout({
               "/admin/videos"
             )}
             onClick={() =>
-              navigate("/admin/videos")
+              navigate(
+                "/admin/videos"
+              )
             }
           />
 
           <MobileSidebarItem
-            icon={<ListTodo size={18} />}
+            icon={
+              <ListTodo size={18} />
+            }
             label="Tasks"
             active={isActive(
               "/admin/tasks"
             )}
             onClick={() =>
-              navigate("/admin/tasks")
+              navigate(
+                "/admin/tasks"
+              )
             }
           />
 
@@ -484,7 +685,9 @@ export default function AdminLayout({
               "/admin/referrals"
             )}
             onClick={() =>
-              navigate("/admin/referrals")
+              navigate(
+                "/admin/referrals"
+              )
             }
           />
 
@@ -495,38 +698,49 @@ export default function AdminLayout({
               "/admin/add-balance"
             )}
             onClick={() =>
-              navigate("/admin/add-balance")
+              navigate(
+                "/admin/add-balance"
+              )
             }
           />
 
           <MobileSidebarItem
-            icon={<Settings size={18} />}
+            icon={
+              <Settings size={18} />
+            }
             label="Settings"
             active={isActive(
               "/admin/settings"
             )}
             onClick={() =>
-              navigate("/admin/settings")
+              navigate(
+                "/admin/settings"
+              )
             }
           />
+
         </nav>
 
         {/* MOBILE LOGOUT */}
 
         <div className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white p-3">
           <button
+            type="button"
             onClick={logout}
             className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-red-600 transition hover:bg-red-50"
           >
             <LogOut size={18} />
-            <span>Logout</span>
+
+            <span>
+              Logout
+            </span>
           </button>
         </div>
       </aside>
 
       {/* =====================================================
           PAGE CONTENT
-      ====================================================== */}
+      ===================================================== */}
 
       <main className="min-h-screen lg:ml-64">
         {children}
@@ -545,13 +759,14 @@ function SidebarItem({
   active,
   onClick,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   active?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${
         active
@@ -560,7 +775,10 @@ function SidebarItem({
       }`}
     >
       {icon}
-      <span>{label}</span>
+
+      <span>
+        {label}
+      </span>
     </button>
   );
 }
@@ -575,13 +793,14 @@ function MobileSidebarItem({
   active,
   onClick,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   active?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={`flex w-full items-center justify-between rounded-xl px-4 py-3.5 text-sm font-medium transition ${
         active
@@ -591,7 +810,10 @@ function MobileSidebarItem({
     >
       <span className="flex items-center gap-3">
         {icon}
-        <span>{label}</span>
+
+        <span>
+          {label}
+        </span>
       </span>
 
       <ChevronRight size={16} />
