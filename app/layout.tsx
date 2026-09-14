@@ -116,6 +116,11 @@ export default function RootLayout({
           name="apple-mobile-web-app-title"
           content="EarnNova"
         />
+
+        <meta
+          name="monetag"
+          content="f9854282bc585f9099661e567a00b86f"
+        />
       </head>
 
       <body className="min-h-screen bg-[#050b16] text-white antialiased">
