@@ -117,10 +117,19 @@ export default function RootLayout({
           content="EarnNova"
         />
 
+        {/* Monetag Verification */}
         <meta
           name="monetag"
           content="f9854282bc585f9099661e567a00b86f"
         />
+
+        {/* Monetag Multitag */}
+        <script
+          src="https://quge5.com/88/tag.min.js"
+          data-zone="280288"
+          async
+          data-cfasync="false"
+        ></script>
       </head>
 
       <body className="min-h-screen bg-[#050b16] text-white antialiased">
